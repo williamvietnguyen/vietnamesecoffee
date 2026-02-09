@@ -81,8 +81,9 @@ Runs a built-in suite of 6 standard perft positions (startpos, Kiwipete, positio
 - **Check extensions** -- extends search depth by 1 when the side to move is in check, avoiding horizon-effect blunders.
 - **Quiescence search** -- at depth 0, continues searching captures and promotions until a quiet position is reached, preventing the engine from stopping at a position mid-exchange.
 - **Move ordering** -- TT move first, then MVV-LVA (most valuable victim, least valuable attacker) for captures, then promotion bonus. Uses incremental selection sort for lazy move ordering.
-- **Repetition detection** -- tracks Zobrist hash history across the game and within the search tree. Returns a draw score (0) on repetition.
-- **Fifty-move rule** -- returns draw when the half-move clock reaches 100.
+- **Contempt factor** -- draws from repetition or the fifty-move rule are scored at -40 cp instead of 0. The engine would rather be slightly worse than accept a draw, forcing it to avoid repetitions, refuse simplifications, and play for a win. Stalemate (a forced draw) is unaffected.
+- **Repetition detection** -- tracks Zobrist hash history across the game and within the search tree. Returns contempt-penalized score on repetition.
+- **Fifty-move rule** -- returns contempt-penalized score when the half-move clock reaches 100.
 - **Atomic stop** -- search can be halted instantly from another goroutine via an atomic flag. Time checks occur every 2048 nodes.
 - **Concurrent search** -- the UCI `go` command launches search in a goroutine; `stop` halts it immediately.
 

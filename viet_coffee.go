@@ -1275,6 +1275,11 @@ func evaluatePawnStorm(pos *Position, us, them int) int {
 const SearchInfinity = 30000
 const MateScore = 29000
 
+// Contempt factor: treats draws as slightly losing, forcing the engine to play
+// for a win rather than settle for repetitions or simplifications. A value of
+// 40cp means the engine would rather be 40cp worse than accept a draw.
+const Contempt = 40
+
 type SearchInfo struct {
 	nodes    uint64
 	stopTime time.Time
@@ -1424,18 +1429,18 @@ func negamax(pos *Position, depth, ply, alpha, beta int, info *SearchInfo) int {
 		}
 	}
 
-	// Repetition detection
+	// Repetition detection (contempt: treat draws as losing)
 	if ply > 0 {
 		for _, h := range info.history {
 			if h == pos.Hash {
-				return 0
+				return -Contempt
 			}
 		}
 	}
 
-	// Fifty-move rule
+	// Fifty-move rule (contempt: treat draws as losing)
 	if ply > 0 && pos.HalfMoveClock >= 100 {
-		return 0
+		return -Contempt
 	}
 
 	if depth <= 0 {
