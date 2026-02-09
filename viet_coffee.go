@@ -1360,6 +1360,13 @@ func scoreMove(pos *Position, m Move, ttMove Move) int {
 	if m.IsPromotion() {
 		score += 9000 + pieceValue[m.PromoPiece()]
 	}
+	// Bonus for checking moves — explore forcing lines first (aggressive/combinational style)
+	if score < 10000 { // don't bother for moves already scored high (TT, good captures)
+		newPos := pos.makeMove(m)
+		if newPos.inCheck(newPos.SideToMove) {
+			score += 5000
+		}
+	}
 	return score
 }
 
