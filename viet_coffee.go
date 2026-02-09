@@ -2409,8 +2409,9 @@ func (bot *lichessBot) shouldAcceptChallenge(ch *lichessChallenge) (bool, string
 	if ch.Variant.Key != "standard" {
 		return false, "variant"
 	}
-	// Reject games with initial time < 60 seconds (only play 1+0 or longer)
-	if ch.TimeControl.Limit < 60000 {
+	// Reject games with initial time < 30 seconds per side
+	// Note: TimeControl.Limit is in seconds
+	if ch.TimeControl.Limit < 30 {
 		return false, "tooFast"
 	}
 	bot.mu.Lock()
