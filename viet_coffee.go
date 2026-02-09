@@ -1017,8 +1017,19 @@ func evaluate(pos *Position) int {
 	score -= evaluatePawns(pos, Black)
 
 	// King attack evaluation (aggressive play!)
-	score += evaluateKingAttack(pos, White, Black)
-	score -= evaluateKingAttack(pos, Black, White)
+	whiteKingAttack := evaluateKingAttack(pos, White, Black)
+	blackKingAttack := evaluateKingAttack(pos, Black, White)
+	score += whiteKingAttack - blackKingAttack
+
+	// King safety imbalance: when one side's attack is stronger,
+	// the advantage grows superlinearly — encourages sacrificing
+	// material to press a king safety advantage.
+	imbalance := whiteKingAttack - blackKingAttack
+	if imbalance > 0 {
+		score += imbalance * imbalance / 200
+	} else if imbalance < 0 {
+		score -= imbalance * imbalance / 200
+	}
 
 	// Pawn storm evaluation
 	score += evaluatePawnStorm(pos, White, Black)
@@ -1381,11 +1392,21 @@ func evaluatePawnStorm(pos *Position, us, them int) int {
 		return 0
 	}
 	enemyKing := lsb(enemyKingBB)
-	kingFile := sqFile(enemyKing)
+	enemyKingFile := sqFile(enemyKing)
+
+	// Detect opposite-side castling
+	oppositeSide := false
+	ourKingBB := pos.Pieces[us][King]
+	if ourKingBB != 0 {
+		ourKingFile := sqFile(lsb(ourKingBB))
+		if (ourKingFile <= 2 && enemyKingFile >= 5) || (ourKingFile >= 5 && enemyKingFile <= 2) {
+			oppositeSide = true
+		}
+	}
 
 	bonus := 0
 	// Check for our pawns advancing on files near enemy king
-	for f := kingFile - 1; f <= kingFile+1; f++ {
+	for f := enemyKingFile - 1; f <= enemyKingFile+1; f++ {
 		if f < 0 || f >= 8 {
 			continue
 		}
@@ -1400,6 +1421,9 @@ func evaluatePawnStorm(pos *Position, us, them int) int {
 				bonus += (4 - rank) * 20
 			}
 		}
+	}
+	if oppositeSide {
+		bonus = bonus * 3 / 2
 	}
 	return bonus
 }

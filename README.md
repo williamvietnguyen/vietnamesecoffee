@@ -133,12 +133,14 @@ Knights and bishops are overvalued to encourage piece activity and tactical sacr
   - 5+ attackers: +900 cp or more (worth sacrificing a queen!)
 - Penalty for weak enemy king pawn shield (missing defenders)
 - **Uncastled king bonus** — +30 cp if the opponent still has castling rights (king likely in center). Encourages the engine to attack before the opponent reaches safety.
+- **King safety imbalance** — when one side's king attack is stronger than the other's, the advantage grows superlinearly (quadratic scaling, divisor 200). A 100 cp attack edge yields +50 cp extra; a 200 cp edge yields +200 cp extra (worth a piece sacrifice); a 300 cp edge yields +450 cp extra. Encourages pressing king safety advantages aggressively.
 - **Initiative/tempo bonus** — +15 cp flat bonus for having the move. The engine always prefers maintaining the initiative over passive defense.
 
 **Pawn storm evaluation:**
 - Large bonuses for advancing pawns on files near enemy king
 - Encourages direct pawn attacks on the enemy king position
 - Scales with pawn advancement (up to +80 cp for a 7th rank pawn storm!)
+- **Opposite-side castling boost** — when kings are castled on opposite sides (one king on files a-c, the other on files f-h), pawn storm bonuses are multiplied by 3/2 (50% boost). Opposite-side castling positions are inherently sharp — both sides race to attack, and pawn storms are the primary weapon.
 
 All evaluation is relative to the side to move.
 
