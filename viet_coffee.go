@@ -878,7 +878,10 @@ func (p *Position) makeMove(m Move) Position {
 // Tuned for aggressive play: knights and bishops valued higher to encourage
 // attacking piece play and sacrifices. Rooks slightly devalued to de-emphasize
 // slow endgame grinding in favor of dynamic middlegame attacks.
+// Own pawns valued at 90cp (cheap to sacrifice for open lines), opponent pawns
+// at 100cp (still respect their value when capturing).
 var pieceValue = [6]int{100, 340, 350, 490, 900, 0}
+const ownPawnValue = 90
 
 // Piece-square tables (from White's perspective, A1=index 0)
 // For Black, mirror vertically via sq^56.
@@ -958,15 +961,34 @@ var pst = [6]*[64]int{&pstPawn, &pstKnight, &pstBishop, &pstRook, &pstQueen, &ps
 func evaluate(pos *Position) int {
 	score := 0
 
+	// Asymmetric pawn values: own pawns worth 90cp (cheap to sacrifice),
+	// opponent's pawns worth 100cp (still respect their value when capturing).
+	whitePawnVal, blackPawnVal := pieceValue[Pawn], pieceValue[Pawn]
+	if pos.SideToMove == White {
+		whitePawnVal = ownPawnValue
+	} else {
+		blackPawnVal = ownPawnValue
+	}
+
 	// Material + piece-square tables
-	for pc := 0; pc < 6; pc++ {
-		// White pieces
-		bb := pos.Pieces[White][pc]
+	// Pawns (asymmetric values)
+	bb := pos.Pieces[White][Pawn]
+	for bb != 0 {
+		sq := popLSB(&bb)
+		score += whitePawnVal + pst[Pawn][sq]
+	}
+	bb = pos.Pieces[Black][Pawn]
+	for bb != 0 {
+		sq := popLSB(&bb)
+		score -= blackPawnVal + pst[Pawn][sq^56]
+	}
+	// Non-pawn pieces
+	for pc := 1; pc < 6; pc++ {
+		bb = pos.Pieces[White][pc]
 		for bb != 0 {
 			sq := popLSB(&bb)
 			score += pieceValue[pc] + pst[pc][sq]
 		}
-		// Black pieces
 		bb = pos.Pieces[Black][pc]
 		for bb != 0 {
 			sq := popLSB(&bb)
@@ -986,6 +1008,10 @@ func evaluate(pos *Position) int {
 	score += evaluateRooks(pos, White)
 	score -= evaluateRooks(pos, Black)
 
+	// Bishop/queen x-ray to enemy king
+	score += evaluateXrays(pos, White, Black)
+	score -= evaluateXrays(pos, Black, White)
+
 	// Pawn structure
 	score += evaluatePawns(pos, White)
 	score -= evaluatePawns(pos, Black)
@@ -997,6 +1023,15 @@ func evaluate(pos *Position) int {
 	// Pawn storm evaluation
 	score += evaluatePawnStorm(pos, White, Black)
 	score -= evaluatePawnStorm(pos, Black, White)
+
+	// Uncastled king bonus: if the opponent still has castling rights,
+	// their king is likely in the center — attack before they castle!
+	if pos.CastlingRights&(BlackKingSide|BlackQueenSide) != 0 {
+		score += 30 // Black hasn't castled, bonus for White
+	}
+	if pos.CastlingRights&(WhiteKingSide|WhiteQueenSide) != 0 {
+		score -= 30 // White hasn't castled, bonus for Black
+	}
 
 	if pos.SideToMove == Black {
 		score = -score
@@ -1019,40 +1054,45 @@ func evaluateKingAttack(pos *Position, us, them int) int {
 	// Count attacking pieces near the enemy king
 	attackers := 0
 
-	// Knights attacking king zone
+	// Knights attacking king zone + tropism
 	knights := pos.Pieces[us][Knight]
 	for knights != 0 {
 		sq := popLSB(&knights)
+		distance := abs(sqRank(sq)-sqRank(enemyKing)) + abs(sqFile(sq)-sqFile(enemyKing))
+		bonus += (8 - distance) * 3 // tropism: knights gravitate toward enemy king
 		if knightAttacks[sq]&kingZone != 0 {
 			attackers++
-			// Extra bonus for knights close to enemy king
-			distance := abs(sqRank(sq)-sqRank(enemyKing)) + abs(sqFile(sq)-sqFile(enemyKing))
-			bonus += (8 - distance) * 3
 		}
 	}
 
-	// Bishops attacking king zone
+	// Bishops attacking king zone + tropism
 	bishops := pos.Pieces[us][Bishop]
 	for bishops != 0 {
 		sq := popLSB(&bishops)
+		distance := abs(sqRank(sq)-sqRank(enemyKing)) + abs(sqFile(sq)-sqFile(enemyKing))
+		bonus += (8 - distance) * 2 // tropism: bishops closer to enemy king
 		if bishopAttacks(sq, pos.AllOccupied)&kingZone != 0 {
 			attackers++
 		}
 	}
 
-	// Rooks attacking king zone
+	// Rooks attacking king zone + tropism
 	rooks := pos.Pieces[us][Rook]
 	for rooks != 0 {
 		sq := popLSB(&rooks)
+		distance := abs(sqRank(sq)-sqRank(enemyKing)) + abs(sqFile(sq)-sqFile(enemyKing))
+		bonus += (8 - distance) * 2 // tropism: rooks closer to enemy king
 		if rookAttacks(sq, pos.AllOccupied)&kingZone != 0 {
 			attackers++
 		}
 	}
 
-	// Queens attacking king zone
+	// Queens attacking king zone + tropism
 	queens := pos.Pieces[us][Queen]
 	for queens != 0 {
 		sq := popLSB(&queens)
+		distance := abs(sqRank(sq)-sqRank(enemyKing)) + abs(sqFile(sq)-sqFile(enemyKing))
+		bonus += (8 - distance) * 3 // tropism: queen gravitates toward enemy king
 		if queenAttacks(sq, pos.AllOccupied)&kingZone != 0 {
 			attackers++
 		}
@@ -1153,6 +1193,47 @@ func evaluateRooks(pos *Position, color int) int {
 			}
 		}
 	}
+	return bonus
+}
+
+// evaluateXrays returns a bonus for bishops and queens whose diagonals
+// point at the enemy king zone. Encourages aggressive piece placement
+// aimed at the enemy king, like a battery on an open diagonal.
+func evaluateXrays(pos *Position, us, them int) int {
+	enemyKingBB := pos.Pieces[them][King]
+	if enemyKingBB == 0 {
+		return 0
+	}
+	enemyKingSq := lsb(enemyKingBB)
+	kingZone := kingAttacks[enemyKingSq] | (1 << uint(enemyKingSq))
+	bonus := 0
+
+	// Bishops: bonus if diagonal attacks hit king zone
+	bishops := pos.Pieces[us][Bishop]
+	for bishops != 0 {
+		sq := popLSB(&bishops)
+		att := bishopAttacks(sq, pos.AllOccupied)
+		if att&kingZone != 0 {
+			bonus += 25 // bishop aiming at king
+		}
+	}
+
+	// Queens: bonus if diagonal or file attacks hit king zone
+	// (rook-like component already covered by evaluateRooks for open files,
+	//  so focus on the diagonal component)
+	queens := pos.Pieces[us][Queen]
+	for queens != 0 {
+		sq := popLSB(&queens)
+		diagAtt := bishopAttacks(sq, pos.AllOccupied)
+		if diagAtt&kingZone != 0 {
+			bonus += 30 // queen diagonal aimed at king
+		}
+		rankFileAtt := rookAttacks(sq, pos.AllOccupied)
+		if rankFileAtt&kingZone != 0 {
+			bonus += 20 // queen rank/file aimed at king
+		}
+	}
+
 	return bonus
 }
 
@@ -1549,9 +1630,75 @@ func negamax(pos *Position, depth, ply, alpha, beta int, info *SearchInfo) int {
 			return 0
 		}
 		pickMove(moves, scores, i)
-		newPos := pos.makeMove(moves[i])
+		m := moves[i]
+		newPos := pos.makeMove(m)
+
+		// Sacrifice extension: if we gave up material (moving piece worth more
+		// than captured piece) and we have 2+ attackers on the enemy king, extend
+		// search by 1 ply so the engine can see through the sacrifice.
+		ext := 0
+		if m.IsCapture() {
+			us := pos.SideToMove
+			// Find moving piece
+			fromBit := uint64(1) << uint(m.From())
+			movingPc := Pawn
+			for pc := 0; pc < 6; pc++ {
+				if pos.Pieces[us][pc]&fromBit != 0 {
+					movingPc = pc
+					break
+				}
+			}
+			// Find captured piece
+			them := us ^ 1
+			toBit := uint64(1) << uint(m.To())
+			capturedPc := Pawn
+			if m.IsEP() {
+				capturedPc = Pawn
+			} else {
+				for pc := 0; pc < 6; pc++ {
+					if pos.Pieces[them][pc]&toBit != 0 {
+						capturedPc = pc
+						break
+					}
+				}
+			}
+			// Is this a sacrifice? (giving up more valuable piece)
+			if pieceValue[movingPc] > pieceValue[capturedPc]+50 {
+				// Count attackers near enemy king in the new position
+				enemyKingBB := newPos.Pieces[them][King]
+				if enemyKingBB != 0 {
+					enemyKingSq := lsb(enemyKingBB)
+					kingZone := kingAttacks[enemyKingSq] | (1 << uint(enemyKingSq))
+					attackers := 0
+					for pc := Knight; pc <= Queen; pc++ {
+						bb := newPos.Pieces[us][pc]
+						for bb != 0 {
+							sq := popLSB(&bb)
+							var att uint64
+							switch pc {
+							case Knight:
+								att = knightAttacks[sq]
+							case Bishop:
+								att = bishopAttacks(sq, newPos.AllOccupied)
+							case Rook:
+								att = rookAttacks(sq, newPos.AllOccupied)
+							case Queen:
+								att = queenAttacks(sq, newPos.AllOccupied)
+							}
+							if att&kingZone != 0 {
+								attackers++
+							}
+						}
+					}
+					if attackers >= 2 {
+						ext = 1
+					}
+				}
+			}
+		}
+
 		info.history = append(info.history, pos.Hash)
-		score := -negamax(&newPos, depth-1, ply+1, -beta, -alpha, info)
+		score := -negamax(&newPos, depth-1+ext, ply+1, -beta, -alpha, info)
 		info.history = info.history[:len(info.history)-1]
 		if score > bestScore {
 			bestScore = score

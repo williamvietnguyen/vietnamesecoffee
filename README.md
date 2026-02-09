@@ -79,6 +79,7 @@ Runs a built-in suite of 6 standard perft positions (startpos, Kiwipete, positio
 - **Transposition table** -- 64 MB hash table (power-of-two sized, lockless indexing). Stores best move, score, depth, and bound type (exact, upper, lower). Used for both move ordering and search cutoffs. Mate scores are adjusted for distance from root on store/probe.
 - **Null move pruning** -- if the side to move has non-pawn material and is not in check, tries passing the turn (R=2 reduction) to get a beta cutoff without searching all moves.
 - **Check extensions** -- extends search depth by 1 when the side to move is in check, avoiding horizon-effect blunders.
+- **Sacrifice extensions** -- when a move sacrifices material (moving piece worth more than captured piece) and the sacrificing side has 2+ pieces attacking the enemy king zone, extends search by 1 ply. This lets the engine "see through" piece sacrifices to find checkmates and winning attacks, enabling Tal-like combinational play.
 - **Quiescence search** -- at depth 0, continues searching captures and promotions until a quiet position is reached, preventing the engine from stopping at a position mid-exchange.
 - **Move ordering** -- TT move first, then MVV-LVA (most valuable victim, least valuable attacker) for captures, then promotion bonus, then checking moves. Quiet moves that give check get a +5000 bonus so the engine explores forcing/combinational lines before passive moves. Uses incremental selection sort for lazy move ordering.
 - **Contempt factor** -- draws from repetition or the fifty-move rule are scored at -40 cp instead of 0. The engine would rather be slightly worse than accept a draw, forcing it to avoid repetitions, refuse simplifications, and play for a win. Stalemate (a forced draw) is unaffected.
@@ -92,13 +93,13 @@ Runs a built-in suite of 6 standard perft positions (startpos, Kiwipete, positio
 VietCoffee is tuned for **aggressive, attacking play**.
 
 **Material values (tuned for attacking style):**
-- Pawn: 100 cp
+- Pawn: 100 cp (opponent's) / 90 cp (own) — asymmetric! Own pawns are cheap to sacrifice for open lines
 - Knight: 340 cp (boosted +20 over typical 320)
 - Bishop: 350 cp (boosted +20 over typical 330)
 - Rook: 490 cp (reduced -10 from typical 500)
 - Queen: 900 cp
 
-Knights and bishops are overvalued to encourage piece activity and tactical sacrifices. Rooks are slightly undervalued to de-emphasize slow endgame grinding.
+Knights and bishops are overvalued to encourage piece activity and tactical sacrifices. Rooks are slightly undervalued to de-emphasize slow endgame grinding. Own pawns are deliberately undervalued so the engine will happily sacrifice pawns to open files, create passed pawns, or accelerate attacks.
 
 **Piece-square tables:** Aggressive tuning encourages:
 - Forward pawn advances (especially kingside pawns)
@@ -113,10 +114,13 @@ Knights and bishops are overvalued to encourage piece activity and tactical sacr
 - Passed pawns: +20 to +125 cp based on advancement (boosted for aggressive pawn pushes)
 - Doubled pawns: -5 cp each (reduced penalty - structure matters less than activity)
 - Isolated pawns: -8 cp (reduced penalty)
+- Bishop x-ray to enemy king: +25 cp (bishop diagonal aimed at king zone)
+- Queen diagonal x-ray to enemy king: +30 cp
+- Queen rank/file x-ray to enemy king: +20 cp
 
 **King attack evaluation (non-linear scaling — enables piece sacrifices):**
 - Bonus for pieces attacking squares near enemy king
-- Bonus for knights close to enemy king (proximity bonus)
+- **King tropism** — all pieces (knights, bishops, rooks, queens) get a bonus for being physically close to the enemy king (Chebyshev distance). Knights and queens get 3cp per step closer, bishops and rooks get 2cp. Gravitates every piece toward the enemy king like a swarm.
 - **Non-linear attacker scaling** — the more pieces aimed at the king, the disproportionately larger the reward. This is what makes the engine sacrifice:
   - 1 attacker: +5 cp (minor annoyance)
   - 2 attackers: +40 cp (real pressure)
@@ -124,6 +128,7 @@ Knights and bishops are overvalued to encourage piece activity and tactical sacr
   - 4 attackers: +270 cp (worth sacrificing a rook!)
   - 5+ attackers: +450 cp or more (devastating, worth a queen!)
 - Penalty for weak enemy king pawn shield (missing defenders)
+- **Uncastled king bonus** — +30 cp if the opponent still has castling rights (king likely in center). Encourages the engine to attack before the opponent reaches safety.
 
 **Pawn storm evaluation:**
 - Large bonuses for advancing pawns on files near enemy king
