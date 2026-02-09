@@ -189,7 +189,7 @@ Verify: `go version`
 ### Step 3: Build the engine
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/vietnamesecoffee.git
+git clone https://github.com/williamvietnguyen/vietnamesecoffee.git
 cd vietnamesecoffee
 go build -o viet_coffee viet_coffee.go
 ```
@@ -265,6 +265,40 @@ The bot will start on boot and restart automatically if it crashes.
 - **Chat greeting** -- sends "Good luck! I'm VietCoffee, a chess engine." at the start of each game
 - **Shared transposition table** -- all concurrent games share the 64 MB global TT
 - **Logging** -- all bot activity logs to stderr with `[lichess]` or `[game XXXXX]` prefixes
+
+## Releasing a new version
+
+Binaries are cross-compiled locally and published as GitHub releases. No CI required.
+
+### 1. Build
+
+```bash
+./build.sh v1.0.1
+```
+
+This produces statically linked binaries in `dist/`:
+- `dist/viet_coffee-linux-amd64` (Ubuntu, Debian, cloud servers)
+- `dist/viet_coffee-linux-arm64` (Raspberry Pi 4/5, Jetson Nano)
+
+### 2. Create the release
+
+```bash
+gh release create v1.0.1 \
+  dist/viet_coffee-linux-amd64 \
+  dist/viet_coffee-linux-arm64 \
+  --title "VietCoffee v1.0.1" \
+  --notes "Release notes here"
+```
+
+### 3. Deploy to your server
+
+```bash
+curl -L -o viet_coffee https://github.com/williamvietnguyen/vietnamesecoffee/releases/download/v1.0.1/viet_coffee-linux-amd64
+chmod +x viet_coffee
+sudo systemctl restart viet-coffee
+```
+
+Replace the version tag and architecture as needed.
 
 ## Architecture
 
