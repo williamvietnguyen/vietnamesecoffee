@@ -114,10 +114,15 @@ Knights and bishops are overvalued to encourage piece activity and tactical sacr
 - Doubled pawns: -5 cp each (reduced penalty - structure matters less than activity)
 - Isolated pawns: -8 cp (reduced penalty)
 
-**King attack evaluation:**
+**King attack evaluation (non-linear scaling — enables piece sacrifices):**
 - Bonus for pieces attacking squares near enemy king
 - Bonus for knights close to enemy king (proximity bonus)
-- Bonus scales with number of attackers (2+ attackers triggers extra bonuses)
+- **Non-linear attacker scaling** — the more pieces aimed at the king, the disproportionately larger the reward. This is what makes the engine sacrifice:
+  - 1 attacker: +5 cp (minor annoyance)
+  - 2 attackers: +40 cp (real pressure)
+  - 3 attackers: +120 cp (worth sacrificing a piece to achieve!)
+  - 4 attackers: +270 cp (worth sacrificing a rook!)
+  - 5+ attackers: +450 cp or more (devastating, worth a queen!)
 - Penalty for weak enemy king pawn shield (missing defenders)
 
 **Pawn storm evaluation:**

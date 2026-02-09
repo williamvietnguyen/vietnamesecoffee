@@ -1058,10 +1058,20 @@ func evaluateKingAttack(pos *Position, us, them int) int {
 		}
 	}
 
-	// Bonus scales with number of attackers
-	if attackers >= 2 {
-		bonus += attackers * 15
+	// Non-linear king attack scaling: the more attackers, the disproportionately
+	// larger the bonus. This is what makes the engine sacrifice pieces — getting
+	// a 3rd or 4th attacker on the king is worth more than a whole piece.
+	//
+	//   1 attacker:   5 cp  (minor annoyance)
+	//   2 attackers: 40 cp  (real pressure)
+	//   3 attackers: 120 cp (worth a piece sacrifice!)
+	//   4 attackers: 270 cp (worth a rook sacrifice!)
+	//   5+ attackers: devastating
+	kingAttackWeight := [8]int{0, 5, 40, 120, 270, 450, 600, 750}
+	if attackers >= len(kingAttackWeight) {
+		attackers = len(kingAttackWeight) - 1
 	}
+	bonus += kingAttackWeight[attackers]
 
 	// Penalty for weak enemy king pawn shield
 	kingFile := sqFile(enemyKing)
