@@ -107,8 +107,8 @@ Knights and bishops are overvalued to encourage piece activity and tactical sacr
 
 **Positional evaluation:**
 - Bishop pair: +50 cp
-- Rook on open file: +20 cp
-- Rook on semi-open file: +10 cp
+- Rook on open file: +20 cp (+45 cp if file is near enemy king!)
+- Rook on semi-open file: +10 cp (+25 cp if file is near enemy king!)
 - Passed pawns: +20 to +125 cp based on advancement (boosted for aggressive pawn pushes)
 - Doubled pawns: -5 cp each (reduced penalty - structure matters less than activity)
 - Isolated pawns: -8 cp (reduced penalty)
@@ -118,6 +118,16 @@ Knights and bishops are overvalued to encourage piece activity and tactical sacr
 - Bonus for knights close to enemy king (proximity bonus)
 - Bonus scales with number of attackers (2+ attackers triggers extra bonuses)
 - Penalty for weak enemy king pawn shield (missing defenders)
+
+**Pawn storm evaluation:**
+- Large bonuses for advancing pawns on files near enemy king
+- Encourages direct pawn attacks on the enemy king position
+- Scales with pawn advancement (up to +80 cp for a 7th rank pawn storm!)
+
+**Tactical awareness:**
+- Detects and rewards undefended enemy pieces ("hanging pieces")
+- Awards 25% of piece value for each hanging piece (encourages tactical shots)
+- Knights/bishops/rooks/queens all checked for defense
 
 All evaluation is relative to the side to move.
 

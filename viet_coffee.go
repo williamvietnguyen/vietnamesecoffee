@@ -994,6 +994,14 @@ func evaluate(pos *Position) int {
 	score += evaluateKingAttack(pos, White, Black)
 	score -= evaluateKingAttack(pos, Black, White)
 
+	// Pawn storm evaluation
+	score += evaluatePawnStorm(pos, White, Black)
+	score -= evaluatePawnStorm(pos, Black, White)
+
+	// Hanging pieces (undefended enemy pieces)
+	score += evaluateHangingPieces(pos, White, Black)
+	score -= evaluateHangingPieces(pos, Black, White)
+
 	if pos.SideToMove == Black {
 		score = -score
 	}
@@ -1106,6 +1114,15 @@ func abs(x int) int {
 // evaluateRooks returns a bonus for rooks on open or semi-open files.
 func evaluateRooks(pos *Position, color int) int {
 	bonus := 0
+	them := color ^ 1
+
+	// Find enemy king for targeting bonuses
+	enemyKingBB := pos.Pieces[them][King]
+	enemyKingFile := -1
+	if enemyKingBB != 0 {
+		enemyKingFile = sqFile(lsb(enemyKingBB))
+	}
+
 	rooks := pos.Pieces[color][Rook]
 	for rooks != 0 {
 		sq := popLSB(&rooks)
@@ -1114,12 +1131,20 @@ func evaluateRooks(pos *Position, color int) int {
 		// Check if file is open (no pawns from either side)
 		fileBB := fileMask[file]
 		ourPawns := pos.Pieces[color][Pawn] & fileBB
-		theirPawns := pos.Pieces[color^1][Pawn] & fileBB
+		theirPawns := pos.Pieces[them][Pawn] & fileBB
 
 		if ourPawns == 0 && theirPawns == 0 {
 			bonus += 20 // open file
+			// Extra bonus if open file is near enemy king (aggressive!)
+			if enemyKingFile >= 0 && abs(file-enemyKingFile) <= 1 {
+				bonus += 25 // rook aimed at king's vicinity!
+			}
 		} else if ourPawns == 0 && theirPawns != 0 {
 			bonus += 10 // semi-open file
+			// Extra bonus if semi-open file is near enemy king
+			if enemyKingFile >= 0 && abs(file-enemyKingFile) <= 1 {
+				bonus += 15
+			}
 		}
 	}
 	return bonus
@@ -1215,6 +1240,84 @@ func evaluatePawns(pos *Position, color int) int {
 	}
 
 	return score
+}
+
+// evaluatePawnStorm returns a bonus for advancing pawns near the enemy king.
+func evaluatePawnStorm(pos *Position, us, them int) int {
+	enemyKingBB := pos.Pieces[them][King]
+	if enemyKingBB == 0 {
+		return 0
+	}
+	enemyKing := lsb(enemyKingBB)
+	kingFile := sqFile(enemyKing)
+
+	bonus := 0
+	// Check for our pawns advancing on files near enemy king
+	for f := kingFile - 1; f <= kingFile+1; f++ {
+		if f < 0 || f >= 8 {
+			continue
+		}
+		ourPawns := pos.Pieces[us][Pawn] & fileMask[f]
+		for ourPawns != 0 {
+			sq := popLSB(&ourPawns)
+			rank := sqRank(sq)
+			// Bonus for pawns advancing toward enemy king
+			if us == White && rank > 3 {
+				bonus += (rank - 3) * 20 // big bonus for pawn storms!
+			} else if us == Black && rank < 4 {
+				bonus += (4 - rank) * 20
+			}
+		}
+	}
+	return bonus
+}
+
+// evaluateHangingPieces returns a bonus for undefended enemy pieces.
+func evaluateHangingPieces(pos *Position, us, them int) int {
+	bonus := 0
+	// Check enemy knights, bishops, rooks, and queens
+	for pc := Knight; pc <= Queen; pc++ {
+		pieces := pos.Pieces[them][pc]
+		for pieces != 0 {
+			sq := popLSB(&pieces)
+			// Is this piece defended by any enemy piece?
+			if !isDefended(pos, sq, them) {
+				// Award 25% of piece value for hanging pieces (encourages tactics!)
+				bonus += pieceValue[pc] / 4
+			}
+		}
+	}
+	return bonus
+}
+
+// isDefended checks if a square is defended by the given color.
+func isDefended(pos *Position, sq, color int) bool {
+	// Check if defended by pawns
+	if pawnAttacks[color^1][sq]&pos.Pieces[color][Pawn] != 0 {
+		return true
+	}
+
+	// Check if defended by knights
+	if knightAttacks[sq]&pos.Pieces[color][Knight] != 0 {
+		return true
+	}
+
+	// Check if defended by king
+	if kingAttacks[sq]&pos.Pieces[color][King] != 0 {
+		return true
+	}
+
+	// Check if defended by bishops/queens on diagonals
+	if bishopAttacks(sq, pos.AllOccupied)&(pos.Pieces[color][Bishop]|pos.Pieces[color][Queen]) != 0 {
+		return true
+	}
+
+	// Check if defended by rooks/queens on ranks/files
+	if rookAttacks(sq, pos.AllOccupied)&(pos.Pieces[color][Rook]|pos.Pieces[color][Queen]) != 0 {
+		return true
+	}
+
+	return false
 }
 
 // ============================================================
