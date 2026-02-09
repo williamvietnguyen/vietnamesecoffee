@@ -24,6 +24,12 @@ profile.cov
 go.work
 go.work.sum
 
+# Build output
+dist/
+viet_coffee
+viet_coffee-linux-*
+vietnamesecoffee
+
 # env file
 .env
 
