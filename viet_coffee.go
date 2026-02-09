@@ -998,10 +998,6 @@ func evaluate(pos *Position) int {
 	score += evaluatePawnStorm(pos, White, Black)
 	score -= evaluatePawnStorm(pos, Black, White)
 
-	// Hanging pieces (undefended enemy pieces)
-	score += evaluateHangingPieces(pos, White, Black)
-	score -= evaluateHangingPieces(pos, Black, White)
-
 	if pos.SideToMove == Black {
 		score = -score
 	}
@@ -1270,54 +1266,6 @@ func evaluatePawnStorm(pos *Position, us, them int) int {
 		}
 	}
 	return bonus
-}
-
-// evaluateHangingPieces returns a bonus for undefended enemy pieces.
-func evaluateHangingPieces(pos *Position, us, them int) int {
-	bonus := 0
-	// Check enemy knights, bishops, rooks, and queens
-	for pc := Knight; pc <= Queen; pc++ {
-		pieces := pos.Pieces[them][pc]
-		for pieces != 0 {
-			sq := popLSB(&pieces)
-			// Is this piece defended by any enemy piece?
-			if !isDefended(pos, sq, them) {
-				// Award 25% of piece value for hanging pieces (encourages tactics!)
-				bonus += pieceValue[pc] / 4
-			}
-		}
-	}
-	return bonus
-}
-
-// isDefended checks if a square is defended by the given color.
-func isDefended(pos *Position, sq, color int) bool {
-	// Check if defended by pawns
-	if pawnAttacks[color^1][sq]&pos.Pieces[color][Pawn] != 0 {
-		return true
-	}
-
-	// Check if defended by knights
-	if knightAttacks[sq]&pos.Pieces[color][Knight] != 0 {
-		return true
-	}
-
-	// Check if defended by king
-	if kingAttacks[sq]&pos.Pieces[color][King] != 0 {
-		return true
-	}
-
-	// Check if defended by bishops/queens on diagonals
-	if bishopAttacks(sq, pos.AllOccupied)&(pos.Pieces[color][Bishop]|pos.Pieces[color][Queen]) != 0 {
-		return true
-	}
-
-	// Check if defended by rooks/queens on ranks/files
-	if rookAttacks(sq, pos.AllOccupied)&(pos.Pieces[color][Rook]|pos.Pieces[color][Queen]) != 0 {
-		return true
-	}
-
-	return false
 }
 
 // ============================================================

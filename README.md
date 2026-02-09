@@ -124,11 +124,6 @@ Knights and bishops are overvalued to encourage piece activity and tactical sacr
 - Encourages direct pawn attacks on the enemy king position
 - Scales with pawn advancement (up to +80 cp for a 7th rank pawn storm!)
 
-**Tactical awareness:**
-- Detects and rewards undefended enemy pieces ("hanging pieces")
-- Awards 25% of piece value for each hanging piece (encourages tactical shots)
-- Knights/bishops/rooks/queens all checked for defense
-
 All evaluation is relative to the side to move.
 
 ### Zobrist hashing
