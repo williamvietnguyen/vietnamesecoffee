@@ -875,41 +875,47 @@ func (p *Position) makeMove(m Move) Position {
 // ============================================================
 
 // Piece values (centipawns)
-var pieceValue = [6]int{100, 320, 330, 500, 900, 0}
+// Tuned for aggressive play: knights and bishops valued higher to encourage
+// attacking piece play and sacrifices. Rooks slightly devalued to de-emphasize
+// slow endgame grinding in favor of dynamic middlegame attacks.
+var pieceValue = [6]int{100, 340, 350, 490, 900, 0}
 
 // Piece-square tables (from White's perspective, A1=index 0)
 // For Black, mirror vertically via sq^56.
 
+// Pawn PST tuned for aggressive play: encourages central and kingside pawn advances
 var pstPawn = [64]int{
 	 0,  0,  0,  0,  0,  0,  0,  0,
-	 5, 10, 10,-20,-20, 10, 10,  5,
-	 5, -5,-10,  0,  0,-10, -5,  5,
-	 0,  0,  0, 20, 20,  0,  0,  0,
-	 5,  5, 10, 25, 25, 10,  5,  5,
-	10, 10, 20, 30, 30, 20, 10, 10,
-	50, 50, 50, 50, 50, 50, 50, 50,
+	 5, 10, 10,-20,-20, 10, 15, 20,  // boost kingside pawns
+	 5, -5,-10,  0,  0,  0, 10, 15,  // encourage f/g/h pawn advances
+	 0,  0,  0, 20, 20, 15, 20, 20,
+	 5,  5, 10, 30, 30, 20, 25, 25,  // aggressive central control
+	10, 10, 20, 35, 35, 25, 30, 30,
+	50, 50, 50, 55, 55, 50, 50, 50,
 	 0,  0,  0,  0,  0,  0,  0,  0,
 }
 
+// Knight PST tuned for aggressive play: big bonuses for advanced/central knights
 var pstKnight = [64]int{
 	-50,-40,-30,-30,-30,-30,-40,-50,
 	-40,-20,  0,  5,  5,  0,-20,-40,
-	-30,  0, 10, 15, 15, 10,  0,-30,
+	-30,  5, 15, 20, 20, 15,  5,-30,  // encourage early development
+	-20, 10, 20, 25, 25, 20, 10,-20,  // aggressive central knights
+	-20, 10, 20, 25, 25, 20, 10,-20,
 	-30,  5, 15, 20, 20, 15,  5,-30,
-	-30,  0, 15, 20, 20, 15,  0,-30,
-	-30,  5, 10, 15, 15, 10,  5,-30,
-	-40,-20,  0,  0,  0,  0,-20,-40,
+	-40,-20,  0,  5,  5,  0,-20,-40,
 	-50,-40,-30,-30,-30,-30,-40,-50,
 }
 
+// Bishop PST tuned for aggressive play: rewards long diagonals and active placement
 var pstBishop = [64]int{
 	-20,-10,-10,-10,-10,-10,-10,-20,
 	-10,  5,  0,  0,  0,  0,  5,-10,
 	-10, 10, 10, 10, 10, 10, 10,-10,
-	-10,  0, 10, 10, 10, 10,  0,-10,
-	-10,  5,  5, 10, 10,  5,  5,-10,
-	-10,  0,  5, 10, 10,  5,  0,-10,
-	-10,  0,  0,  0,  0,  0,  0,-10,
+	-10,  5, 15, 15, 15, 15,  5,-10,  // active central bishops
+	-10,  5, 10, 15, 15, 10,  5,-10,
+	-10,  5, 10, 10, 10, 10,  5,-10,
+	-10,  5,  5,  5,  5,  5,  5,-10,
 	-20,-10,-10,-10,-10,-10,-10,-20,
 }
 
@@ -984,10 +990,117 @@ func evaluate(pos *Position) int {
 	score += evaluatePawns(pos, White)
 	score -= evaluatePawns(pos, Black)
 
+	// King attack evaluation (aggressive play!)
+	score += evaluateKingAttack(pos, White, Black)
+	score -= evaluateKingAttack(pos, Black, White)
+
 	if pos.SideToMove == Black {
 		score = -score
 	}
 	return score
+}
+
+// evaluateKingAttack returns a bonus for having pieces close to the enemy king.
+func evaluateKingAttack(pos *Position, us, them int) int {
+	enemyKingBB := pos.Pieces[them][King]
+	if enemyKingBB == 0 {
+		return 0
+	}
+	enemyKing := lsb(enemyKingBB)
+	bonus := 0
+
+	// King zone: squares around the enemy king
+	kingZone := kingAttacks[enemyKing] | (1 << uint(enemyKing))
+
+	// Count attacking pieces near the enemy king
+	attackers := 0
+
+	// Knights attacking king zone
+	knights := pos.Pieces[us][Knight]
+	for knights != 0 {
+		sq := popLSB(&knights)
+		if knightAttacks[sq]&kingZone != 0 {
+			attackers++
+			// Extra bonus for knights close to enemy king
+			distance := abs(sqRank(sq)-sqRank(enemyKing)) + abs(sqFile(sq)-sqFile(enemyKing))
+			bonus += (8 - distance) * 3
+		}
+	}
+
+	// Bishops attacking king zone
+	bishops := pos.Pieces[us][Bishop]
+	for bishops != 0 {
+		sq := popLSB(&bishops)
+		if bishopAttacks(sq, pos.AllOccupied)&kingZone != 0 {
+			attackers++
+		}
+	}
+
+	// Rooks attacking king zone
+	rooks := pos.Pieces[us][Rook]
+	for rooks != 0 {
+		sq := popLSB(&rooks)
+		if rookAttacks(sq, pos.AllOccupied)&kingZone != 0 {
+			attackers++
+		}
+	}
+
+	// Queens attacking king zone
+	queens := pos.Pieces[us][Queen]
+	for queens != 0 {
+		sq := popLSB(&queens)
+		if queenAttacks(sq, pos.AllOccupied)&kingZone != 0 {
+			attackers++
+		}
+	}
+
+	// Bonus scales with number of attackers
+	if attackers >= 2 {
+		bonus += attackers * 15
+	}
+
+	// Penalty for weak enemy king pawn shield
+	kingFile := sqFile(enemyKing)
+	kingRank := sqRank(enemyKing)
+	shieldPawns := 0
+
+	// Count pawns in front of enemy king
+	if them == White && kingRank < 7 {
+		for f := kingFile - 1; f <= kingFile+1; f++ {
+			if f < 0 || f >= 8 {
+				continue
+			}
+			// Check for pawn on the rank in front of the king
+			sq := (kingRank+1)*8 + f
+			if pos.Pieces[White][Pawn]&(1<<uint(sq)) != 0 {
+				shieldPawns++
+			}
+		}
+	} else if them == Black && kingRank > 0 {
+		for f := kingFile - 1; f <= kingFile+1; f++ {
+			if f < 0 || f >= 8 {
+				continue
+			}
+			sq := (kingRank-1)*8 + f
+			if pos.Pieces[Black][Pawn]&(1<<uint(sq)) != 0 {
+				shieldPawns++
+			}
+		}
+	}
+
+	// Bonus for attacking a king with a weak pawn shield
+	if shieldPawns < 2 {
+		bonus += (3 - shieldPawns) * 10
+	}
+
+	return bonus
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 // evaluateRooks returns a bonus for rooks on open or semi-open files.
@@ -1025,12 +1138,12 @@ func evaluatePawns(pos *Position, color int) int {
 
 		count := popcount(ourPawnsOnFile)
 
-		// Doubled pawns penalty
+		// Doubled pawns penalty (reduced for aggressive play - structure matters less)
 		if count >= 2 {
-			score -= 10 * (count - 1)
+			score -= 5 * (count - 1)
 		}
 
-		// Isolated pawn penalty (no friendly pawns on adjacent files)
+		// Isolated pawn penalty (reduced - attacking is more important than structure)
 		if count > 0 {
 			adjacent := uint64(0)
 			if file > 0 {
@@ -1040,7 +1153,7 @@ func evaluatePawns(pos *Position, color int) int {
 				adjacent |= fileMask[file+1]
 			}
 			if (pos.Pieces[color][Pawn] & adjacent) == 0 {
-				score -= 15 // isolated pawn
+				score -= 8 // isolated pawn (was -15)
 			}
 		}
 
@@ -1071,8 +1184,8 @@ func evaluatePawns(pos *Position, color int) int {
 					}
 				}
 				if (theirPawnsOnFile & blockingMask) == 0 && (pos.Pieces[them][Pawn] & blockingMask) == 0 {
-					// Passed pawn bonus increases with rank
-					score += 10 + rank*10
+					// Passed pawn bonus (aggressive tuning: push pawns hard!)
+					score += 20 + rank*15
 				}
 			} else {
 				// Black pawns
@@ -1094,7 +1207,8 @@ func evaluatePawns(pos *Position, color int) int {
 					}
 				}
 				if (theirPawnsOnFile & blockingMask) == 0 && (pos.Pieces[them][Pawn] & blockingMask) == 0 {
-					score += 10 + (7-rank)*10
+					// Passed pawn bonus for Black (aggressive tuning)
+					score += 20 + (7-rank)*15
 				}
 			}
 		}

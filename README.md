@@ -88,9 +88,38 @@ Runs a built-in suite of 6 standard perft positions (startpos, Kiwipete, positio
 
 ### Evaluation
 
-- **Material counting** -- P=100, N=320, B=330, R=500, Q=900 centipawns.
-- **Piece-square tables** -- one table per piece type, from White's perspective. Black's values are vertically mirrored. Encourages central pawns, active knights, developed bishops, rooks on open files, and safe kings.
-- **Score relative to side to move** -- the evaluation always returns a score from the perspective of the side to move.
+VietCoffee is tuned for **aggressive, attacking play**.
+
+**Material values (tuned for attacking style):**
+- Pawn: 100 cp
+- Knight: 340 cp (boosted +20 over typical 320)
+- Bishop: 350 cp (boosted +20 over typical 330)
+- Rook: 490 cp (reduced -10 from typical 500)
+- Queen: 900 cp
+
+Knights and bishops are overvalued to encourage piece activity and tactical sacrifices. Rooks are slightly undervalued to de-emphasize slow endgame grinding.
+
+**Piece-square tables:** Aggressive tuning encourages:
+- Forward pawn advances (especially kingside pawns)
+- Central and advanced knight placement
+- Active bishop diagonals
+- Early piece development
+
+**Positional evaluation:**
+- Bishop pair: +50 cp
+- Rook on open file: +20 cp
+- Rook on semi-open file: +10 cp
+- Passed pawns: +20 to +125 cp based on advancement (boosted for aggressive pawn pushes)
+- Doubled pawns: -5 cp each (reduced penalty - structure matters less than activity)
+- Isolated pawns: -8 cp (reduced penalty)
+
+**King attack evaluation:**
+- Bonus for pieces attacking squares near enemy king
+- Bonus for knights close to enemy king (proximity bonus)
+- Bonus scales with number of attackers (2+ attackers triggers extra bonuses)
+- Penalty for weak enemy king pawn shield (missing defenders)
+
+All evaluation is relative to the side to move.
 
 ### Zobrist hashing
 
