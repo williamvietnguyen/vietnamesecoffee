@@ -1474,7 +1474,7 @@ type TTEntry struct {
 	flag  uint8
 }
 
-const DefaultTTSize = 64 // MB
+const DefaultTTSize = 256 // MB
 
 var tt []TTEntry
 var ttMask uint64
@@ -2506,7 +2506,7 @@ func main() {
 
 const (
 	lichessBaseURL       = "https://lichess.org"
-	maxConcurrentGames   = 4
+	maxConcurrentGames   = 6
 	moveOverheadMs       = 300
 	eventStreamRetryWait = 5 * time.Second
 )
