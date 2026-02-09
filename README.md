@@ -74,15 +74,18 @@ Runs a built-in suite of 6 standard perft positions (startpos, Kiwipete, positio
 
 ### Search
 
-- **Iterative deepening** -- searches depth 1, 2, 3, ... until time runs out or the max depth is reached. The best move from the last fully completed depth is used.
+- **Iterative deepening with aspiration windows** -- searches depth 1, 2, 3, ... until time runs out or the max depth is reached. After depth 4, uses aspiration windows (narrow alpha-beta bounds around the previous depth's score) for faster cutoffs. Falls back to a full window if the score lands outside the aspiration bounds.
 - **Negamax with alpha-beta pruning** -- standard negamax framework with fail-soft alpha-beta window.
+- **Principal Variation Search (PVS)** -- the first move (expected best) is searched with a full window. All subsequent moves are searched with a null (zero) window — if any scores above alpha, it's re-searched with the full window. Reduces node count significantly in well-ordered trees.
+- **Late Move Reductions (LMR)** -- quiet moves searched after the first 3 are reduced by 1 ply (2 plies after the 6th move). If a reduced search returns a score above alpha, the move is re-searched at full depth. Combined with PVS, this lets the engine reach 3-5 plies deeper in the same time.
 - **Transposition table** -- 64 MB hash table (power-of-two sized, lockless indexing). Stores best move, score, depth, and bound type (exact, upper, lower). Used for both move ordering and search cutoffs. Mate scores are adjusted for distance from root on store/probe.
-- **Null move pruning** -- if the side to move has non-pawn material and is not in check, tries passing the turn (R=2 reduction) to get a beta cutoff without searching all moves.
+- **Null move pruning** -- if the side to move has non-pawn material and is not in check, tries passing the turn (R=2 reduction) to get a beta cutoff without searching all moves. **Disabled when attacking** — when 3+ pieces are attacking the enemy king zone, NMP is skipped so the engine doesn't prune away sacrifice lines.
 - **Check extensions** -- extends search depth by 1 when the side to move is in check, avoiding horizon-effect blunders.
 - **Sacrifice extensions** -- when a move sacrifices material (moving piece worth more than captured piece) and the sacrificing side has 2+ pieces attacking the enemy king zone, extends search by 1 ply. This lets the engine "see through" piece sacrifices to find checkmates and winning attacks, enabling Tal-like combinational play.
 - **Quiescence search** -- at depth 0, continues searching captures and promotions until a quiet position is reached, preventing the engine from stopping at a position mid-exchange.
-- **Move ordering** -- TT move first, then MVV-LVA (most valuable victim, least valuable attacker) for captures, then promotion bonus, then checking moves. Quiet moves that give check get a +5000 bonus so the engine explores forcing/combinational lines before passive moves. Uses incremental selection sort for lazy move ordering.
-- **Contempt factor** -- draws from repetition or the fifty-move rule are scored at -40 cp instead of 0. The engine would rather be slightly worse than accept a draw, forcing it to avoid repetitions, refuse simplifications, and play for a win. Stalemate (a forced draw) is unaffected.
+- **Move ordering** -- TT move first, then MVV-LVA (most valuable victim, least valuable attacker) for captures, then promotion bonus, then checking moves, then killer moves. Quiet moves that give check get a +5000 bonus so the engine explores forcing/combinational lines before passive moves. Uses incremental selection sort for lazy move ordering.
+- **Killer moves** -- two killer move slots per ply. When a quiet move (non-capture, non-promotion) causes a beta cutoff, it's stored as a killer. Killers from the same ply are tried before other quiet moves, improving move ordering in non-tactical positions.
+- **Contempt factor** -- draws from repetition or the fifty-move rule are scored at -80 cp instead of 0. The engine treats a draw as being nearly a pawn down, forcing it to take big risks rather than accept a draw. Stalemate (a forced draw) is unaffected.
 - **Repetition detection** -- tracks Zobrist hash history across the game and within the search tree. Returns contempt-penalized score on repetition.
 - **Fifty-move rule** -- returns contempt-penalized score when the half-move clock reaches 100.
 - **Atomic stop** -- search can be halted instantly from another goroutine via an atomic flag. Time checks occur every 2048 nodes.
@@ -111,6 +114,7 @@ Knights and bishops are overvalued to encourage piece activity and tactical sacr
 - Bishop pair: +50 cp
 - Rook on open file: +20 cp (+45 cp if file is near enemy king!)
 - Rook on semi-open file: +10 cp (+25 cp if file is near enemy king!)
+- Connected rooks: +20 cp when two rooks see each other on a rank or file (+45 cp if doubled on a file near enemy king!)
 - Passed pawns: +20 to +125 cp based on advancement (boosted for aggressive pawn pushes)
 - Doubled pawns: -5 cp each (reduced penalty - structure matters less than activity)
 - Isolated pawns: -8 cp (reduced penalty)
@@ -119,16 +123,17 @@ Knights and bishops are overvalued to encourage piece activity and tactical sacr
 - Queen rank/file x-ray to enemy king: +20 cp
 
 **King attack evaluation (non-linear scaling — enables piece sacrifices):**
-- Bonus for pieces attacking squares near enemy king
+- **Wide king danger zone** — uses a 2-ring zone around the enemy king (not just adjacent squares). Inner ring pieces count as full attackers. Outer ring pieces get proximity bonuses (knights +5, bishops/rooks +8, queens +12) — they're one move from attacking.
 - **King tropism** — all pieces (knights, bishops, rooks, queens) get a bonus for being physically close to the enemy king (Chebyshev distance). Knights and queens get 3cp per step closer, bishops and rooks get 2cp. Gravitates every piece toward the enemy king like a swarm.
-- **Non-linear attacker scaling** — the more pieces aimed at the king, the disproportionately larger the reward. This is what makes the engine sacrifice:
-  - 1 attacker: +5 cp (minor annoyance)
-  - 2 attackers: +40 cp (real pressure)
-  - 3 attackers: +120 cp (worth sacrificing a piece to achieve!)
-  - 4 attackers: +270 cp (worth sacrificing a rook!)
-  - 5+ attackers: +450 cp or more (devastating, worth a queen!)
+- **Non-linear attacker scaling (doubled!)** — the more pieces aimed at the king, the disproportionately larger the reward. Weights are doubled from typical engines — the engine will sacrifice anything for a king attack:
+  - 1 attacker: +10 cp (probing)
+  - 2 attackers: +80 cp (real pressure, worth a pawn)
+  - 3 attackers: +240 cp (worth sacrificing a piece!)
+  - 4 attackers: +540 cp (worth sacrificing a rook and more!)
+  - 5+ attackers: +900 cp or more (worth sacrificing a queen!)
 - Penalty for weak enemy king pawn shield (missing defenders)
 - **Uncastled king bonus** — +30 cp if the opponent still has castling rights (king likely in center). Encourages the engine to attack before the opponent reaches safety.
+- **Initiative/tempo bonus** — +15 cp flat bonus for having the move. The engine always prefers maintaining the initiative over passive defense.
 
 **Pawn storm evaluation:**
 - Large bonuses for advancing pawns on files near enemy king
@@ -320,7 +325,7 @@ Everything lives in a single file: `viet_coffee.go`. No external dependencies. T
 | 7 | Move generation (pseudo-legal) |
 | 8 | Make move |
 | 9 | Evaluation (material + piece-square tables) |
-| 10 | Search (iterative deepening, negamax, quiescence, TT, null move pruning) |
+| 10 | Search (iterative deepening, negamax, PVS, LMR, quiescence, TT, null move pruning, killer moves, aspiration windows) |
 | 11 | Perft and divide |
 | 12 | UCI helpers (move parsing, board display) |
 | 13 | UCI loop |

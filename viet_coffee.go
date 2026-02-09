@@ -1036,6 +1036,11 @@ func evaluate(pos *Position) int {
 	if pos.SideToMove == Black {
 		score = -score
 	}
+
+	// Initiative/tempo bonus: reward having the move. The engine always
+	// wants to keep attacking rather than making passive defensive moves.
+	score += 15
+
 	return score
 }
 
@@ -1048,8 +1053,17 @@ func evaluateKingAttack(pos *Position, us, them int) int {
 	enemyKing := lsb(enemyKingBB)
 	bonus := 0
 
-	// King zone: squares around the enemy king
-	kingZone := kingAttacks[enemyKing] | (1 << uint(enemyKing))
+	// King zone: 2 rings around the enemy king (wider danger zone).
+	// Inner ring = directly adjacent squares. Outer ring = squares adjacent
+	// to the inner ring. Pieces in the outer ring are "almost" attacking.
+	innerZone := kingAttacks[enemyKing] | (1 << uint(enemyKing))
+	outerZone := uint64(0)
+	temp := innerZone
+	for temp != 0 {
+		sq := popLSB(&temp)
+		outerZone |= kingAttacks[sq]
+	}
+	outerZone &^= innerZone // outer ring only (exclude inner)
 
 	// Count attacking pieces near the enemy king
 	attackers := 0
@@ -1060,8 +1074,12 @@ func evaluateKingAttack(pos *Position, us, them int) int {
 		sq := popLSB(&knights)
 		distance := abs(sqRank(sq)-sqRank(enemyKing)) + abs(sqFile(sq)-sqFile(enemyKing))
 		bonus += (8 - distance) * 3 // tropism: knights gravitate toward enemy king
-		if knightAttacks[sq]&kingZone != 0 {
+		att := knightAttacks[sq]
+		if att&innerZone != 0 {
 			attackers++
+		} else if att&outerZone != 0 {
+			attackers++ // outer ring still counts (piece is closing in)
+			bonus += 5  // small extra bonus for being in striking distance
 		}
 	}
 
@@ -1071,8 +1089,11 @@ func evaluateKingAttack(pos *Position, us, them int) int {
 		sq := popLSB(&bishops)
 		distance := abs(sqRank(sq)-sqRank(enemyKing)) + abs(sqFile(sq)-sqFile(enemyKing))
 		bonus += (8 - distance) * 2 // tropism: bishops closer to enemy king
-		if bishopAttacks(sq, pos.AllOccupied)&kingZone != 0 {
+		att := bishopAttacks(sq, pos.AllOccupied)
+		if att&innerZone != 0 {
 			attackers++
+		} else if att&outerZone != 0 {
+			bonus += 8 // bishop aimed near king, one move from attacking
 		}
 	}
 
@@ -1082,8 +1103,11 @@ func evaluateKingAttack(pos *Position, us, them int) int {
 		sq := popLSB(&rooks)
 		distance := abs(sqRank(sq)-sqRank(enemyKing)) + abs(sqFile(sq)-sqFile(enemyKing))
 		bonus += (8 - distance) * 2 // tropism: rooks closer to enemy king
-		if rookAttacks(sq, pos.AllOccupied)&kingZone != 0 {
+		att := rookAttacks(sq, pos.AllOccupied)
+		if att&innerZone != 0 {
 			attackers++
+		} else if att&outerZone != 0 {
+			bonus += 8 // rook aimed near king
 		}
 	}
 
@@ -1093,8 +1117,11 @@ func evaluateKingAttack(pos *Position, us, them int) int {
 		sq := popLSB(&queens)
 		distance := abs(sqRank(sq)-sqRank(enemyKing)) + abs(sqFile(sq)-sqFile(enemyKing))
 		bonus += (8 - distance) * 3 // tropism: queen gravitates toward enemy king
-		if queenAttacks(sq, pos.AllOccupied)&kingZone != 0 {
+		att := queenAttacks(sq, pos.AllOccupied)
+		if att&innerZone != 0 {
 			attackers++
+		} else if att&outerZone != 0 {
+			bonus += 12 // queen lurking near king
 		}
 	}
 
@@ -1107,7 +1134,7 @@ func evaluateKingAttack(pos *Position, us, them int) int {
 	//   3 attackers: 120 cp (worth a piece sacrifice!)
 	//   4 attackers: 270 cp (worth a rook sacrifice!)
 	//   5+ attackers: devastating
-	kingAttackWeight := [8]int{0, 5, 40, 120, 270, 450, 600, 750}
+	kingAttackWeight := [8]int{0, 10, 80, 240, 540, 900, 1200, 1500}
 	if attackers >= len(kingAttackWeight) {
 		attackers = len(kingAttackWeight) - 1
 	}
@@ -1170,6 +1197,7 @@ func evaluateRooks(pos *Position, color int) int {
 	}
 
 	rooks := pos.Pieces[color][Rook]
+	rooksCopy := rooks // save for connected rook check
 	for rooks != 0 {
 		sq := popLSB(&rooks)
 		file := sqFile(sq)
@@ -1193,6 +1221,23 @@ func evaluateRooks(pos *Position, color int) int {
 			}
 		}
 	}
+
+	// Connected rooks: bonus when two rooks see each other on a rank or file
+	// (no pieces between them). Doubled rooks are a wrecking ball.
+	if popcount(rooksCopy) >= 2 {
+		rooks = rooksCopy
+		r1 := popLSB(&rooks)
+		r2 := popLSB(&rooks)
+		att := rookAttacks(r1, pos.AllOccupied)
+		if att&(1<<uint(r2)) != 0 {
+			bonus += 20 // connected rooks
+			// Extra bonus if connected on a file near enemy king
+			if sqFile(r1) == sqFile(r2) && enemyKingFile >= 0 && abs(sqFile(r1)-enemyKingFile) <= 1 {
+				bonus += 25 // doubled rooks aimed at king's file!
+			}
+		}
+	}
+
 	return bonus
 }
 
@@ -1365,11 +1410,12 @@ func evaluatePawnStorm(pos *Position, us, them int) int {
 
 const SearchInfinity = 30000
 const MateScore = 29000
+const MaxPly = 128
 
 // Contempt factor: treats draws as slightly losing, forcing the engine to play
 // for a win rather than settle for repetitions or simplifications. A value of
 // 40cp means the engine would rather be 40cp worse than accept a draw.
-const Contempt = 40
+const Contempt = 80
 
 type SearchInfo struct {
 	nodes    uint64
@@ -1377,6 +1423,7 @@ type SearchInfo struct {
 	stopped  int32
 	bestMove Move
 	history  []uint64
+	killers  [MaxPly][2]Move // killer moves: quiet moves that caused beta cutoffs
 }
 
 func (info *SearchInfo) isStopped() bool {
@@ -1431,7 +1478,7 @@ func storeTT(key uint64, move Move, score int16, depth int8, flag uint8) {
 }
 
 // scoreMove assigns a sort score for move ordering (higher = search first).
-func scoreMove(pos *Position, m Move, ttMove Move) int {
+func scoreMove(pos *Position, m Move, ttMove Move, killers [2]Move) int {
 	if m == ttMove && ttMove != 0 {
 		return 30000
 	}
@@ -1456,6 +1503,14 @@ func scoreMove(pos *Position, m Move, ttMove Move) int {
 		newPos := pos.makeMove(m)
 		if newPos.inCheck(newPos.SideToMove) {
 			score += 5000
+		}
+	}
+	// Killer move bonus (quiet moves that caused cutoffs at this ply)
+	if score == 0 {
+		if m == killers[0] {
+			score = 4000
+		} else if m == killers[1] {
+			score = 3900
 		}
 	}
 	return score
@@ -1498,7 +1553,7 @@ func quiescence(pos *Position, alpha, beta int, info *SearchInfo) int {
 
 	scores := make([]int, len(tactical))
 	for i, m := range tactical {
-		scores[i] = scoreMove(pos, m, 0)
+		scores[i] = scoreMove(pos, m, 0, [2]Move{})
 	}
 
 	for i := 0; i < len(tactical); i++ {
@@ -1585,27 +1640,62 @@ func negamax(pos *Position, depth, ply, alpha, beta int, info *SearchInfo) int {
 		depth++
 	}
 
-	// Null move pruning
+	// Null move pruning (disabled when we have 3+ attackers on enemy king —
+	// NMP would prune away sacrifice lines in attacking positions)
 	if ply > 0 && depth >= 3 && !inCheck {
-		// Check for non-pawn material
 		us := pos.SideToMove
 		hasNonPawnMaterial := pos.Pieces[us][Knight]|pos.Pieces[us][Bishop]|
 			pos.Pieces[us][Rook]|pos.Pieces[us][Queen] != 0
 		if hasNonPawnMaterial {
-			// Make null move: flip side, clear EP, update hash
-			nullPos := *pos
-			nullPos.SideToMove ^= 1
-			nullPos.Hash ^= zobristSide
-			if nullPos.EnPassant != NoSquare {
-				nullPos.Hash ^= zobristEP[sqFile(nullPos.EnPassant)]
-				nullPos.EnPassant = NoSquare
+			// Count attackers on enemy king to decide if we're in an attack
+			them := us ^ 1
+			skipNMP := false
+			enemyKingBB := pos.Pieces[them][King]
+			if enemyKingBB != 0 {
+				ek := lsb(enemyKingBB)
+				kz := kingAttacks[ek] | (1 << uint(ek))
+				nmpAttackers := 0
+				for pc := Knight; pc <= Queen; pc++ {
+					bb := pos.Pieces[us][pc]
+					for bb != 0 {
+						sq := popLSB(&bb)
+						var att uint64
+						switch pc {
+						case Knight:
+							att = knightAttacks[sq]
+						case Bishop:
+							att = bishopAttacks(sq, pos.AllOccupied)
+						case Rook:
+							att = rookAttacks(sq, pos.AllOccupied)
+						case Queen:
+							att = queenAttacks(sq, pos.AllOccupied)
+						}
+						if att&kz != 0 {
+							nmpAttackers++
+						}
+					}
+				}
+				if nmpAttackers >= 3 {
+					skipNMP = true // don't prune — we're attacking!
+				}
 			}
-			score := -negamax(&nullPos, depth-1-2, ply+1, -beta, -beta+1, info)
-			if info.isStopped() {
-				return 0
-			}
-			if score >= beta {
-				return beta
+
+			if !skipNMP {
+				// Make null move: flip side, clear EP, update hash
+				nullPos := *pos
+				nullPos.SideToMove ^= 1
+				nullPos.Hash ^= zobristSide
+				if nullPos.EnPassant != NoSquare {
+					nullPos.Hash ^= zobristEP[sqFile(nullPos.EnPassant)]
+					nullPos.EnPassant = NoSquare
+				}
+				score := -negamax(&nullPos, depth-1-2, ply+1, -beta, -beta+1, info)
+				if info.isStopped() {
+					return 0
+				}
+				if score >= beta {
+					return beta
+				}
 			}
 		}
 	}
@@ -1618,9 +1708,13 @@ func negamax(pos *Position, depth, ply, alpha, beta int, info *SearchInfo) int {
 		return 0 // stalemate
 	}
 
+	var plyKillers [2]Move
+	if ply < MaxPly {
+		plyKillers = info.killers[ply]
+	}
 	scores := make([]int, len(moves))
 	for i, m := range moves {
-		scores[i] = scoreMove(pos, m, ttMove)
+		scores[i] = scoreMove(pos, m, ttMove, plyKillers)
 	}
 
 	bestScore := -SearchInfinity
@@ -1698,7 +1792,36 @@ func negamax(pos *Position, depth, ply, alpha, beta int, info *SearchInfo) int {
 		}
 
 		info.history = append(info.history, pos.Hash)
-		score := -negamax(&newPos, depth-1+ext, ply+1, -beta, -alpha, info)
+
+		var score int
+		if i == 0 {
+			// PV move: full depth, full window
+			score = -negamax(&newPos, depth-1+ext, ply+1, -beta, -alpha, info)
+		} else {
+			// LMR: reduce depth for late quiet moves
+			reduction := 0
+			if i >= 3 && depth >= 3 && !inCheck && !m.IsCapture() && !m.IsPromotion() &&
+				m != plyKillers[0] && m != plyKillers[1] && m != ttMove {
+				reduction = 1
+				if i >= 6 {
+					reduction = 2
+				}
+			}
+
+			// Search with null window (PVS) and possible reduction (LMR)
+			score = -negamax(&newPos, depth-1-reduction+ext, ply+1, -alpha-1, -alpha, info)
+
+			// If reduced search found something interesting, re-search at full depth
+			if reduction > 0 && score > alpha {
+				score = -negamax(&newPos, depth-1+ext, ply+1, -alpha-1, -alpha, info)
+			}
+
+			// If null window failed high, re-search with full window
+			if score > alpha && score < beta {
+				score = -negamax(&newPos, depth-1+ext, ply+1, -beta, -alpha, info)
+			}
+		}
+
 		info.history = info.history[:len(info.history)-1]
 		if score > bestScore {
 			bestScore = score
@@ -1711,6 +1834,13 @@ func negamax(pos *Position, depth, ply, alpha, beta int, info *SearchInfo) int {
 			}
 		}
 		if score >= beta {
+			// Store killer move (quiet moves only — captures already ordered by MVV-LVA)
+			if !m.IsCapture() && !m.IsPromotion() && ply < MaxPly {
+				if m != info.killers[ply][0] {
+					info.killers[ply][1] = info.killers[ply][0]
+					info.killers[ply][0] = m
+				}
+			}
 			break
 		}
 	}
@@ -1746,13 +1876,30 @@ func search(pos *Position, maxDepth int, info *SearchInfo) Move {
 	}
 
 	var bestMove Move
+	var prevScore int
+	aspirationWindow := 50
+
 	for depth := 1; depth <= maxDepth; depth++ {
 		info.nodes = 0
 		startTime := time.Now()
-		score := negamax(pos, depth, 0, -SearchInfinity, SearchInfinity, info)
+
+		var score int
+		if depth <= 4 {
+			score = negamax(pos, depth, 0, -SearchInfinity, SearchInfinity, info)
+		} else {
+			alpha := prevScore - aspirationWindow
+			beta := prevScore + aspirationWindow
+			score = negamax(pos, depth, 0, alpha, beta, info)
+			// If score falls outside the window, re-search with full window
+			if score <= alpha || score >= beta {
+				score = negamax(pos, depth, 0, -SearchInfinity, SearchInfinity, info)
+			}
+		}
+
 		if info.isStopped() {
 			break
 		}
+		prevScore = score
 		bestMove = info.bestMove
 		elapsed := time.Since(startTime)
 		elapsedMs := elapsed.Milliseconds()
