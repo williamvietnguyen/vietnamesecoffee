@@ -951,6 +951,8 @@ var pst = [6]*[64]int{&pstPawn, &pstKnight, &pstBishop, &pstRook, &pstQueen, &ps
 // evaluate returns the score in centipawns relative to the side to move.
 func evaluate(pos *Position) int {
 	score := 0
+
+	// Material + piece-square tables
 	for pc := 0; pc < 6; pc++ {
 		// White pieces
 		bb := pos.Pieces[White][pc]
@@ -965,9 +967,139 @@ func evaluate(pos *Position) int {
 			score -= pieceValue[pc] + pst[pc][sq^56]
 		}
 	}
+
+	// Bishop pair bonus
+	if popcount(pos.Pieces[White][Bishop]) >= 2 {
+		score += 50
+	}
+	if popcount(pos.Pieces[Black][Bishop]) >= 2 {
+		score -= 50
+	}
+
+	// Rook on open/semi-open file bonus
+	score += evaluateRooks(pos, White)
+	score -= evaluateRooks(pos, Black)
+
+	// Pawn structure
+	score += evaluatePawns(pos, White)
+	score -= evaluatePawns(pos, Black)
+
 	if pos.SideToMove == Black {
 		score = -score
 	}
+	return score
+}
+
+// evaluateRooks returns a bonus for rooks on open or semi-open files.
+func evaluateRooks(pos *Position, color int) int {
+	bonus := 0
+	rooks := pos.Pieces[color][Rook]
+	for rooks != 0 {
+		sq := popLSB(&rooks)
+		file := sqFile(sq)
+
+		// Check if file is open (no pawns from either side)
+		fileBB := fileMask[file]
+		ourPawns := pos.Pieces[color][Pawn] & fileBB
+		theirPawns := pos.Pieces[color^1][Pawn] & fileBB
+
+		if ourPawns == 0 && theirPawns == 0 {
+			bonus += 20 // open file
+		} else if ourPawns == 0 && theirPawns != 0 {
+			bonus += 10 // semi-open file
+		}
+	}
+	return bonus
+}
+
+// evaluatePawns returns a score adjustment for pawn structure.
+func evaluatePawns(pos *Position, color int) int {
+	score := 0
+	them := color ^ 1
+
+	// Iterate over each file
+	for file := 0; file < 8; file++ {
+		fileBB := fileMask[file]
+		ourPawnsOnFile := pos.Pieces[color][Pawn] & fileBB
+		theirPawnsOnFile := pos.Pieces[them][Pawn] & fileBB
+
+		count := popcount(ourPawnsOnFile)
+
+		// Doubled pawns penalty
+		if count >= 2 {
+			score -= 10 * (count - 1)
+		}
+
+		// Isolated pawn penalty (no friendly pawns on adjacent files)
+		if count > 0 {
+			adjacent := uint64(0)
+			if file > 0 {
+				adjacent |= fileMask[file-1]
+			}
+			if file < 7 {
+				adjacent |= fileMask[file+1]
+			}
+			if (pos.Pieces[color][Pawn] & adjacent) == 0 {
+				score -= 15 // isolated pawn
+			}
+		}
+
+		// Passed pawn bonus (no enemy pawns on this file or adjacent files ahead)
+		if count > 0 {
+			// Get the most advanced pawn on this file
+			bb := ourPawnsOnFile
+			var mostAdvanced int
+			if color == White {
+				// Find the highest rank
+				for bb != 0 {
+					sq := popLSB(&bb)
+					if bb == 0 || sqRank(sq) > sqRank(mostAdvanced) {
+						mostAdvanced = sq
+					}
+				}
+				// Check if it's passed
+				rank := sqRank(mostAdvanced)
+				blockingMask := uint64(0)
+				// Files to check: current + adjacent
+				for f := file - 1; f <= file+1; f++ {
+					if f < 0 || f >= 8 {
+						continue
+					}
+					// All squares ahead of this pawn
+					for r := rank + 1; r < 8; r++ {
+						blockingMask |= 1 << uint(r*8+f)
+					}
+				}
+				if (theirPawnsOnFile & blockingMask) == 0 && (pos.Pieces[them][Pawn] & blockingMask) == 0 {
+					// Passed pawn bonus increases with rank
+					score += 10 + rank*10
+				}
+			} else {
+				// Black pawns
+				mostAdvanced = lsb(ourPawnsOnFile) // lowest rank for black
+				for bb != 0 {
+					sq := popLSB(&bb)
+					if sqRank(sq) < sqRank(mostAdvanced) {
+						mostAdvanced = sq
+					}
+				}
+				rank := sqRank(mostAdvanced)
+				blockingMask := uint64(0)
+				for f := file - 1; f <= file+1; f++ {
+					if f < 0 || f >= 8 {
+						continue
+					}
+					for r := 0; r < rank; r++ {
+						blockingMask |= 1 << uint(r*8+f)
+					}
+				}
+				if (theirPawnsOnFile & blockingMask) == 0 && (pos.Pieces[them][Pawn] & blockingMask) == 0 {
+					score += 10 + (7-rank)*10
+				}
+			}
+		}
+	}
+
 	return score
 }
 
