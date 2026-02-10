@@ -28,7 +28,7 @@ go.work.sum
 dist/
 viet_coffee
 viet_coffee-linux-*
-vietnamesecoffee
+/vietnamesecoffee
 
 # env file
 .env
