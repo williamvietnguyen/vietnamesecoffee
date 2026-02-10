@@ -78,7 +78,7 @@ Runs a built-in suite of 6 standard perft positions (startpos, Kiwipete, positio
 - **Negamax with alpha-beta pruning** -- standard negamax framework with fail-soft alpha-beta window.
 - **Principal Variation Search (PVS)** -- the first move (expected best) is searched with a full window. All subsequent moves are searched with a null (zero) window — if any scores above alpha, it's re-searched with the full window. Reduces node count significantly in well-ordered trees.
 - **Late Move Reductions (LMR)** -- quiet moves searched after the first 3 are reduced by 1 ply (2 plies after the 6th move). If a reduced search returns a score above alpha, the move is re-searched at full depth. Combined with PVS, this lets the engine reach 3-5 plies deeper in the same time.
-- **Transposition table** -- 64 MB hash table (power-of-two sized, lockless indexing). Stores best move, score, depth, and bound type (exact, upper, lower). Used for both move ordering and search cutoffs. Mate scores are adjusted for distance from root on store/probe.
+- **Transposition table** -- 256 MB hash table (power-of-two sized, lockless indexing). Stores best move, score, depth, and bound type (exact, upper, lower). Used for both move ordering and search cutoffs. Mate scores are adjusted for distance from root on store/probe.
 - **Null move pruning** -- if the side to move has non-pawn material and is not in check, tries passing the turn (R=2 reduction) to get a beta cutoff without searching all moves. **Disabled when attacking** — when 3+ pieces are attacking the enemy king zone, NMP is skipped so the engine doesn't prune away sacrifice lines.
 - **Check extensions** -- extends search depth by 1 when the side to move is in check, avoiding horizon-effect blunders.
 - **Sacrifice extensions** -- when a move sacrifices material (moving piece worth more than captured piece) and the sacrificing side has 2+ pieces attacking the enemy king zone, extends search by 1 ply. This lets the engine "see through" piece sacrifices to find checkmates and winning attacks, enabling Tal-like combinational play.
@@ -268,15 +268,15 @@ The bot will start on boot and restart automatically if it crashes.
 
 - **Accepts** standard chess challenges (rated and casual, any time control, human or bot opponents)
 - **Declines** non-standard variants (Chess960, Crazyhouse, etc.) with reason `"variant"`
-- **Declines** challenges when already playing 4 concurrent games with reason `"later"`
-- **Concurrent games** -- handles up to 4 games simultaneously, each in its own goroutine
+- **Declines** challenges when already playing 6 concurrent games with reason `"later"`
+- **Concurrent games** -- handles up to 6 games simultaneously, each in its own goroutine
 - **Time management** -- allocates `timeLeft / 30 + 70% of increment` per move, capped at 30% of remaining time, minus a 300ms network latency buffer. Minimum think time is 50ms.
 - **Auto-reconnect** -- if the Lichess event stream drops, reconnects after 5 seconds
 - **Rate limit handling** -- on HTTP 429, waits 60 seconds before retrying (per Lichess API docs)
 - **Graceful shutdown** -- catches SIGINT/SIGTERM, cancels all active games, waits up to 10 seconds for them to finish
 - **Chat greeting** -- sends "Good luck! I'm VietCoffee, a chess engine." at the start of each game
-- **Shared transposition table** -- all concurrent games share the 64 MB global TT
-- **Auto-challenge** -- when no rated game is active, automatically challenges a random online bot with a random time control (bullet, blitz, or classical)
+- **Shared transposition table** -- all concurrent games share the 256 MB global TT
+- **Auto-challenge** -- when no rated game is active and at least 1 hour has passed since the last game, automatically challenges a random online bot with a random time control (bullet, blitz, or classical)
 - **Logging** -- all bot activity logs to stderr with `[lichess]` or `[game XXXXX]` prefixes
 
 ## Releasing a new version
