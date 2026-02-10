@@ -1,6 +1,6 @@
 # VietCoffee
 
-A chess engine written in Go, tuned to play aggressively. Single file, zero dependencies, stdlib only.
+A chess engine written in Go, tuned to play aggressively. Zero dependencies, stdlib only.
 
 VietCoffee speaks the UCI protocol for use with chess GUIs, and includes a built-in Lichess Bot API client for playing live games on lichess.org.
 
@@ -9,13 +9,13 @@ VietCoffee speaks the UCI protocol for use with chess GUIs, and includes a built
 Requires Go 1.21 or later.
 
 ```
-go build -o viet_coffee viet_coffee.go
+go build -o viet_coffee .
 ```
 
 Or run directly:
 
 ```
-go run viet_coffee.go
+go run .
 ```
 
 ## Usage
@@ -203,7 +203,7 @@ Verify: `go version`
 ```bash
 git clone https://github.com/williamvietnguyen/vietnamesecoffee.git
 cd vietnamesecoffee
-go build -o viet_coffee viet_coffee.go
+go build -o viet_coffee .
 ```
 
 Run the perft suite to confirm the build is correct:
@@ -315,23 +315,16 @@ Replace the version tag and architecture as needed.
 
 ## Architecture
 
-Everything lives in a single file: `viet_coffee.go`. No external dependencies. The code is organized in sections:
+No external dependencies — stdlib only. The code is organized into focused files, all in `package main`:
 
-| Section | Contents |
+| File | Contents |
 |---|---|
-| 1 | Constants, types, Move encoding |
-| 2 | Bitboard utilities |
-| 3 | Attack tables, Zobrist hashing |
-| 4 | Sliding piece attack generation |
-| 5 | Position helpers (attack detection, check, piece lookup) |
-| 6 | FEN parsing |
-| 7 | Move generation (pseudo-legal) |
-| 8 | Make move |
-| 9 | Evaluation (material + piece-square tables) |
-| 10 | Search (iterative deepening, negamax, PVS, LMR, quiescence, TT, null move pruning, killer moves, aspiration windows) |
-| 11 | Perft and divide |
-| 12 | UCI helpers (move parsing, board display) |
-| 13 | UCI loop |
-| 14 | Perft test suite |
-| 15 | Main entry point |
-| 16 | Lichess Bot API client |
+| `board.go` | Constants, types, Move encoding, bitboard utilities, attack tables, Zobrist hashing, sliding piece attacks, position helpers |
+| `movegen.go` | FEN parsing, pseudo-legal + legal move generation, make move |
+| `eval.go` | Material values, piece-square tables, evaluation (king attack, rooks, x-rays, pawns, pawn storm) |
+| `search.go` | Transposition table, move ordering, quiescence, negamax (PVS, LMR, null move pruning, killer moves, aspiration windows), iterative deepening |
+| `perft.go` | Perft and divide |
+| `uci.go` | UCI move parsing, board display, UCI loop |
+| `perft_suite.go` | Perft test suite (6 standard positions) |
+| `main.go` | Entry point |
+| `lichess.go` | Lichess Bot API client |

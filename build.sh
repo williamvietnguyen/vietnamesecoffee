@@ -9,10 +9,10 @@ mkdir -p "$OUT_DIR"
 
 echo "Building VietCoffee $VERSION"
 
-GOOS=linux GOARCH=amd64 go build -o "$OUT_DIR/viet_coffee-linux-amd64" viet_coffee.go
+GOOS=linux GOARCH=amd64 go build -o "$OUT_DIR/viet_coffee-linux-amd64" .
 echo "  built $OUT_DIR/viet_coffee-linux-amd64"
 
-GOOS=linux GOARCH=arm64 go build -o "$OUT_DIR/viet_coffee-linux-arm64" viet_coffee.go
+GOOS=linux GOARCH=arm64 go build -o "$OUT_DIR/viet_coffee-linux-arm64" .
 echo "  built $OUT_DIR/viet_coffee-linux-arm64"
 
 echo "Done. Binaries in $OUT_DIR/"
