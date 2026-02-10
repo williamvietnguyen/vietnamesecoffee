@@ -276,6 +276,7 @@ The bot will start on boot and restart automatically if it crashes.
 - **Graceful shutdown** -- catches SIGINT/SIGTERM, cancels all active games, waits up to 10 seconds for them to finish
 - **Chat greeting** -- sends "Good luck! I'm VietCoffee, a chess engine." at the start of each game
 - **Shared transposition table** -- all concurrent games share the 64 MB global TT
+- **Auto-challenge** -- when no rated game is active, automatically challenges a random online bot with a random time control (bullet, blitz, or classical)
 - **Logging** -- all bot activity logs to stderr with `[lichess]` or `[game XXXXX]` prefixes
 
 ## Releasing a new version
