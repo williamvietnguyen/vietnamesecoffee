@@ -284,8 +284,9 @@ The bot will start on boot and restart automatically if it crashes.
 
 ### Lichess Bot behavior
 
-- **Accepts** standard chess challenges (rated and casual, any time control, human or bot opponents)
+- **Accepts** standard chess challenges (rated and casual, bullet/blitz/rapid/classical, human or bot opponents)
 - **Declines** non-standard variants (Chess960, Crazyhouse, etc.) with reason `"variant"`
+- **Declines** ultra-bullet and correspondence with reason `"timeControl"`
 - **Declines** challenges when already playing 6 concurrent games with reason `"later"`
 - **Concurrent games** -- handles up to 6 games simultaneously, each in its own goroutine
 - **Time management** -- allocates `timeLeft / 30 + 70% of increment` per move, capped at 30% of remaining time, minus a 300ms network latency buffer. Minimum think time is 50ms.
@@ -294,7 +295,6 @@ The bot will start on boot and restart automatically if it crashes.
 - **Graceful shutdown** -- catches SIGINT/SIGTERM, cancels all active games, waits up to 10 seconds for them to finish
 - **Chat greeting** -- sends "Good luck! I'm VietCoffee, a chess engine." at the start of each game
 - **Shared transposition table** -- all concurrent games share the 256 MB global TT
-- **Auto-challenge** -- when no rated game is active and at least 1 hour has passed since the last game, automatically challenges a random online bot with a random time control (bullet, blitz, or classical)
 - **Logging** -- all bot activity logs to stderr with `[lichess]` or `[game XXXXX]` prefixes
 
 ## Releasing a new version

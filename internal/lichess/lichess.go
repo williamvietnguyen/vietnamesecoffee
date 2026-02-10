@@ -4,10 +4,8 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -117,7 +115,6 @@ type lichessBot struct {
 	cancel     context.CancelFunc
 	mu          sync.Mutex
 	activeGames map[string]context.CancelFunc
-	lastGameEnd time.Time
 }
 
 // --- HTTP helpers ---
@@ -242,88 +239,19 @@ func (bot *lichessBot) resign(gameID string) {
 	resp.Body.Close()
 }
 
-func (bot *lichessBot) challengeBot(username string, clockLimit, clockIncrement int) error {
-	form := fmt.Sprintf("rated=true&clock.limit=%d&clock.increment=%d&color=random&variant=standard",
-		clockLimit, clockIncrement)
-	resp, err := bot.doRequest("POST", "/api/challenge/"+username, form, "application/x-www-form-urlencoded")
-	if err != nil {
-		log.Printf("[lichess] challenge %s error: %v\n", username, err)
-		return err
-	}
-	resp.Body.Close()
-	log.Printf("[lichess] challenged %s (%d+%d)\n", username, clockLimit, clockIncrement)
-	return nil
-}
-
-func (bot *lichessBot) getOnlineBots() ([]string, error) {
-	resp, err := bot.doRequest("GET", "/api/bot/online?nb=50", "", "")
-	if err != nil {
-		return nil, err
-	}
-	var usernames []string
-	streamNDJSON(resp, func(line []byte) bool {
-		var entry struct {
-			Username string `json:"username"`
-		}
-		if json.Unmarshal(line, &entry) == nil && strings.ToLower(entry.Username) != bot.botID {
-			usernames = append(usernames, entry.Username)
-		}
-		return true
-	})
-	return usernames, nil
-}
-
-func (bot *lichessBot) seekGame() {
-	bots, err := bot.getOnlineBots()
-	if err != nil {
-		log.Printf("[lichess] failed to get online bots: %v\n", err)
-		return
-	}
-	if len(bots) == 0 {
-		log.Println("[lichess] no online bots found")
-		return
-	}
-
-	type timeControl struct{ limit, increment int }
-	controls := []timeControl{
-		{60, 0}, {60, 1}, {120, 1}, // bullet
-		{180, 0}, {180, 2}, {300, 0}, {300, 3}, // blitz
-		{600, 0}, {600, 5}, {900, 10}, // classical
-	}
-
-	opponent := bots[rand.Intn(len(bots))]
-	tc := controls[rand.Intn(len(controls))]
-	log.Printf("[lichess] seeking game: challenging %s (%d+%d)\n", opponent, tc.limit, tc.increment)
-	bot.challengeBot(opponent, tc.limit, tc.increment)
-}
-
-func (bot *lichessBot) autoChallenge() {
-	for {
-		select {
-		case <-bot.ctx.Done():
-			return
-		case <-time.After(30 * time.Second):
-		}
-		bot.mu.Lock()
-		count := len(bot.activeGames)
-		lastEnd := bot.lastGameEnd
-		bot.mu.Unlock()
-		if count < 1 && (lastEnd.IsZero() || time.Since(lastEnd) >= time.Hour) {
-			bot.seekGame()
-		}
-	}
-}
-
 // --- Challenge filter ---
 
 func (bot *lichessBot) shouldAcceptChallenge(ch *lichessChallenge) (bool, string) {
 	if ch.Variant.Key != "standard" {
 		return false, "variant"
 	}
-	// Reject games with initial time < 30 seconds per side
-	// Note: TimeControl.Limit is in seconds
-	if ch.TimeControl.Limit < 30 {
-		return false, "tooFast"
+	// Only accept real-time games: bullet, blitz, rapid, classical.
+	// Reject ultra-bullet (too fast) and correspondence (ties up a slot for days).
+	switch ch.Speed {
+	case "bullet", "blitz", "rapid", "classical":
+		// ok
+	default:
+		return false, "timeControl"
 	}
 	bot.mu.Lock()
 	count := len(bot.activeGames)
@@ -406,7 +334,6 @@ func (bot *lichessBot) playGame(gameID string) {
 	defer func() {
 		bot.mu.Lock()
 		delete(bot.activeGames, gameID)
-		bot.lastGameEnd = time.Now()
 		bot.mu.Unlock()
 		log.Printf("[game %s] ended\n", gameID)
 	}()
@@ -613,7 +540,6 @@ func (bot *lichessBot) runEventStream() {
 					if cancel, ok := bot.activeGames[gameID]; ok {
 						cancel()
 						delete(bot.activeGames, gameID)
-						bot.lastGameEnd = time.Now()
 					}
 					bot.mu.Unlock()
 				}
@@ -699,7 +625,6 @@ func Run() {
 	log.Printf("[lichess] logged in as: %s\n", username)
 
 	go bot.waitForShutdown()
-	go bot.autoChallenge()
 
 	bot.runEventStream()
 }
