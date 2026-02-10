@@ -162,6 +162,78 @@ var KnightAttacks [64]uint64
 var KingAttacks [64]uint64
 var PawnAttacks [2][64]uint64
 
+// Magic bitboard structures
+type sqMagic struct {
+	mask  uint64
+	magic uint64
+	shift uint
+	table []uint64
+}
+
+var bishopMagics [64]sqMagic
+var rookMagics [64]sqMagic
+
+// Hardcoded magic numbers from dragontoothmg (LERF A1=0)
+var bishopMagicNumbers = [64]uint64{
+	0x0002020202020200, 0x0002020202020000, 0x0004010202000000, 0x0004040080000000,
+	0x0001104000000000, 0x0000821040000000, 0x0000410410400000, 0x0000104104104000,
+	0x0000040404040400, 0x0000020202020200, 0x0000040102020000, 0x0000040400800000,
+	0x0000011040000000, 0x0000008210400000, 0x0000004104104000, 0x0000002082082000,
+	0x0004000808080800, 0x0002000404040400, 0x0001000202020200, 0x0000800802004000,
+	0x0000800400A00000, 0x0000200100884000, 0x0000400082082000, 0x0000200041041000,
+	0x0002080010101000, 0x0001040008080800, 0x0000208004010400, 0x0000404004010200,
+	0x0000840000802000, 0x0000404002011000, 0x0000808001041000, 0x0000404000820800,
+	0x0001041000202000, 0x0000820800101000, 0x0000104400080800, 0x0000020080080080,
+	0x0000404040040100, 0x0000808100020100, 0x0001010100020800, 0x0000808080010400,
+	0x0000820820004000, 0x0000410410002000, 0x0000082088001000, 0x0000002011000800,
+	0x0000080100400400, 0x0001010101000200, 0x0002020202000400, 0x0001010101000200,
+	0x0000410410400000, 0x0000208208200000, 0x0000002084100000, 0x0000000020880000,
+	0x0000001002020000, 0x0000040408020000, 0x0004040404040000, 0x0002020202020000,
+	0x0000104104104000, 0x0000002082082000, 0x0000000020841000, 0x0000000000208800,
+	0x0000000010020200, 0x0000000404080200, 0x0000040404040400, 0x0002020202020200,
+}
+
+var bishopMagicShifts = [64]uint{
+	58, 59, 59, 59, 59, 59, 59, 58,
+	59, 59, 59, 59, 59, 59, 59, 59,
+	59, 59, 57, 57, 57, 57, 59, 59,
+	59, 59, 57, 55, 55, 57, 59, 59,
+	59, 59, 57, 55, 55, 57, 59, 59,
+	59, 59, 57, 57, 57, 57, 59, 59,
+	59, 59, 59, 59, 59, 59, 59, 59,
+	58, 59, 59, 59, 59, 59, 59, 58,
+}
+
+var rookMagicNumbers = [64]uint64{
+	0x0080001020400080, 0x0040001000200040, 0x0080081000200080, 0x0080040800100080,
+	0x0080020400080080, 0x0080010200040080, 0x0080008001000200, 0x0080002040800100,
+	0x0000800020400080, 0x0000400020005000, 0x0000801000200080, 0x0000800800100080,
+	0x0000800400080080, 0x0000800200040080, 0x0000800100020080, 0x0000800040800100,
+	0x0000208000400080, 0x0000404000201000, 0x0000808010002000, 0x0000808008001000,
+	0x0000808004000800, 0x0000808002000400, 0x0000010100020004, 0x0000020000408104,
+	0x0000208080004000, 0x0000200040005000, 0x0000100080200080, 0x0000080080100080,
+	0x0000040080080080, 0x0000020080040080, 0x0000010080800200, 0x0000800080004100,
+	0x0000204000800080, 0x0000200040401000, 0x0000100080802000, 0x0000080080801000,
+	0x0000040080800800, 0x0000020080800400, 0x0000020001010004, 0x0000800040800100,
+	0x0000204000808000, 0x0000200040008080, 0x0000100020008080, 0x0000080010008080,
+	0x0000040008008080, 0x0000020004008080, 0x0000010002008080, 0x0000004081020004,
+	0x0000204000800080, 0x0000200040008080, 0x0000100020008080, 0x0000080010008080,
+	0x0000040008008080, 0x0000020004008080, 0x0000800100020080, 0x0000800041000080,
+	0x00FFFCDDFCED714A, 0x007FFCDDFCED714A, 0x003FFFCDFFD88096, 0x0000040810002101,
+	0x0001000204080011, 0x0001000204000801, 0x0001000082000401, 0x0001FFFAABFAD1A2,
+}
+
+var rookMagicShifts = [64]uint{
+	52, 53, 53, 53, 53, 53, 53, 52,
+	53, 54, 54, 54, 54, 54, 54, 53,
+	53, 54, 54, 54, 54, 54, 54, 53,
+	53, 54, 54, 54, 54, 54, 54, 53,
+	53, 54, 54, 54, 54, 54, 54, 53,
+	53, 54, 54, 54, 54, 54, 54, 53,
+	53, 54, 54, 54, 54, 54, 54, 53,
+	53, 54, 54, 53, 53, 53, 53, 53,
+}
+
 func InitAttacks() {
 	initMasks()
 
@@ -211,6 +283,8 @@ func InitAttacks() {
 			}
 		}
 	}
+
+	initMagics()
 }
 
 // Zobrist hashing
@@ -241,7 +315,7 @@ func InitZobrist() {
 // Section 4: Sliding Piece Attacks
 // ============================================================
 
-func BishopAttacks(sq int, occ uint64) uint64 {
+func bishopAttacksSlow(sq int, occ uint64) uint64 {
 	var attacks uint64
 	directions := [][2]int{{1, 1}, {1, -1}, {-1, 1}, {-1, -1}}
 	for _, d := range directions {
@@ -259,7 +333,7 @@ func BishopAttacks(sq int, occ uint64) uint64 {
 	return attacks
 }
 
-func RookAttacks(sq int, occ uint64) uint64 {
+func rookAttacksSlow(sq int, occ uint64) uint64 {
 	var attacks uint64
 	directions := [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
 	for _, d := range directions {
@@ -275,6 +349,97 @@ func RookAttacks(sq int, occ uint64) uint64 {
 		}
 	}
 	return attacks
+}
+
+// bishopRelevantOccupancy returns the mask of squares whose occupancy
+// affects bishop attacks from sq, excluding edge squares.
+func bishopRelevantOccupancy(sq int) uint64 {
+	var mask uint64
+	r, f := SqRank(sq), SqFile(sq)
+	for dr, df := 1, 1; r+dr < 7 && f+df < 7; dr, df = dr+1, df+1 {
+		mask |= 1 << uint((r+dr)*8+(f+df))
+	}
+	for dr, df := 1, -1; r+dr < 7 && f+df > 0; dr, df = dr+1, df-1 {
+		mask |= 1 << uint((r+dr)*8+(f+df))
+	}
+	for dr, df := -1, 1; r+dr > 0 && f+df < 7; dr, df = dr-1, df+1 {
+		mask |= 1 << uint((r+dr)*8+(f+df))
+	}
+	for dr, df := -1, -1; r+dr > 0 && f+df > 0; dr, df = dr-1, df-1 {
+		mask |= 1 << uint((r+dr)*8+(f+df))
+	}
+	return mask
+}
+
+// rookRelevantOccupancy returns the mask of squares whose occupancy
+// affects rook attacks from sq, excluding edge squares.
+func rookRelevantOccupancy(sq int) uint64 {
+	var mask uint64
+	r, f := SqRank(sq), SqFile(sq)
+	for i := r + 1; i < 7; i++ {
+		mask |= 1 << uint(i*8+f)
+	}
+	for i := r - 1; i > 0; i-- {
+		mask |= 1 << uint(i*8+f)
+	}
+	for i := f + 1; i < 7; i++ {
+		mask |= 1 << uint(r*8+i)
+	}
+	for i := f - 1; i > 0; i-- {
+		mask |= 1 << uint(r*8+i)
+	}
+	return mask
+}
+
+func initMagics() {
+	for sq := 0; sq < 64; sq++ {
+		// Bishop
+		bm := &bishopMagics[sq]
+		bm.mask = bishopRelevantOccupancy(sq)
+		bm.magic = bishopMagicNumbers[sq]
+		bm.shift = bishopMagicShifts[sq]
+		bm.table = make([]uint64, 1<<(64-bm.shift))
+
+		// Carry-Rippler enumeration of all subsets of mask
+		occ := uint64(0)
+		for {
+			idx := (occ * bm.magic) >> bm.shift
+			bm.table[idx] = bishopAttacksSlow(sq, occ)
+			occ = (occ - bm.mask) & bm.mask
+			if occ == 0 {
+				break
+			}
+		}
+
+		// Rook
+		rm := &rookMagics[sq]
+		rm.mask = rookRelevantOccupancy(sq)
+		rm.magic = rookMagicNumbers[sq]
+		rm.shift = rookMagicShifts[sq]
+		rm.table = make([]uint64, 1<<(64-rm.shift))
+
+		occ = 0
+		for {
+			idx := (occ * rm.magic) >> rm.shift
+			rm.table[idx] = rookAttacksSlow(sq, occ)
+			occ = (occ - rm.mask) & rm.mask
+			if occ == 0 {
+				break
+			}
+		}
+	}
+}
+
+// BishopAttacks returns bishop attack bitboard using magic bitboards.
+func BishopAttacks(sq int, occ uint64) uint64 {
+	m := &bishopMagics[sq]
+	return m.table[((occ&m.mask)*m.magic)>>m.shift]
+}
+
+// RookAttacks returns rook attack bitboard using magic bitboards.
+func RookAttacks(sq int, occ uint64) uint64 {
+	m := &rookMagics[sq]
+	return m.table[((occ&m.mask)*m.magic)>>m.shift]
 }
 
 func QueenAttacks(sq int, occ uint64) uint64 {
