@@ -1,4 +1,4 @@
-package main
+package engine
 
 // ============================================================
 // Section 9: Evaluation
@@ -10,7 +10,7 @@ package main
 // slow endgame grinding in favor of dynamic middlegame attacks.
 // Own pawns valued at 90cp (cheap to sacrifice for open lines), opponent pawns
 // at 100cp (still respect their value when capturing).
-var pieceValue = [6]int{100, 340, 350, 490, 900, 0}
+var PieceValue = [6]int{100, 340, 350, 490, 900, 0}
 const ownPawnValue = 90
 
 // Piece-square tables (from White's perspective, A1=index 0)
@@ -87,13 +87,13 @@ var pstKing = [64]int{
 
 var pst = [6]*[64]int{&pstPawn, &pstKnight, &pstBishop, &pstRook, &pstQueen, &pstKing}
 
-// evaluate returns the score in centipawns relative to the side to move.
-func evaluate(pos *Position) int {
+// Evaluate returns the score in centipawns relative to the side to move.
+func Evaluate(pos *Position) int {
 	score := 0
 
 	// Asymmetric pawn values: own pawns worth 90cp (cheap to sacrifice),
 	// opponent's pawns worth 100cp (still respect their value when capturing).
-	whitePawnVal, blackPawnVal := pieceValue[Pawn], pieceValue[Pawn]
+	whitePawnVal, blackPawnVal := PieceValue[Pawn], PieceValue[Pawn]
 	if pos.SideToMove == White {
 		whitePawnVal = ownPawnValue
 	} else {
@@ -104,33 +104,33 @@ func evaluate(pos *Position) int {
 	// Pawns (asymmetric values)
 	bb := pos.Pieces[White][Pawn]
 	for bb != 0 {
-		sq := popLSB(&bb)
+		sq := PopLSB(&bb)
 		score += whitePawnVal + pst[Pawn][sq]
 	}
 	bb = pos.Pieces[Black][Pawn]
 	for bb != 0 {
-		sq := popLSB(&bb)
+		sq := PopLSB(&bb)
 		score -= blackPawnVal + pst[Pawn][sq^56]
 	}
 	// Non-pawn pieces
 	for pc := 1; pc < 6; pc++ {
 		bb = pos.Pieces[White][pc]
 		for bb != 0 {
-			sq := popLSB(&bb)
-			score += pieceValue[pc] + pst[pc][sq]
+			sq := PopLSB(&bb)
+			score += PieceValue[pc] + pst[pc][sq]
 		}
 		bb = pos.Pieces[Black][pc]
 		for bb != 0 {
-			sq := popLSB(&bb)
-			score -= pieceValue[pc] + pst[pc][sq^56]
+			sq := PopLSB(&bb)
+			score -= PieceValue[pc] + pst[pc][sq^56]
 		}
 	}
 
 	// Bishop pair bonus
-	if popcount(pos.Pieces[White][Bishop]) >= 2 {
+	if Popcount(pos.Pieces[White][Bishop]) >= 2 {
 		score += 50
 	}
-	if popcount(pos.Pieces[Black][Bishop]) >= 2 {
+	if Popcount(pos.Pieces[Black][Bishop]) >= 2 {
 		score -= 50
 	}
 
@@ -191,18 +191,18 @@ func evaluateKingAttack(pos *Position, us, them int) int {
 	if enemyKingBB == 0 {
 		return 0
 	}
-	enemyKing := lsb(enemyKingBB)
+	enemyKing := Lsb(enemyKingBB)
 	bonus := 0
 
 	// King zone: 2 rings around the enemy king (wider danger zone).
 	// Inner ring = directly adjacent squares. Outer ring = squares adjacent
 	// to the inner ring. Pieces in the outer ring are "almost" attacking.
-	innerZone := kingAttacks[enemyKing] | (1 << uint(enemyKing))
+	innerZone := KingAttacks[enemyKing] | (1 << uint(enemyKing))
 	outerZone := uint64(0)
 	temp := innerZone
 	for temp != 0 {
-		sq := popLSB(&temp)
-		outerZone |= kingAttacks[sq]
+		sq := PopLSB(&temp)
+		outerZone |= KingAttacks[sq]
 	}
 	outerZone &^= innerZone // outer ring only (exclude inner)
 
@@ -212,10 +212,10 @@ func evaluateKingAttack(pos *Position, us, them int) int {
 	// Knights attacking king zone + tropism
 	knights := pos.Pieces[us][Knight]
 	for knights != 0 {
-		sq := popLSB(&knights)
-		distance := abs(sqRank(sq)-sqRank(enemyKing)) + abs(sqFile(sq)-sqFile(enemyKing))
+		sq := PopLSB(&knights)
+		distance := Abs(SqRank(sq)-SqRank(enemyKing)) + Abs(SqFile(sq)-SqFile(enemyKing))
 		bonus += (8 - distance) * 3 // tropism: knights gravitate toward enemy king
-		att := knightAttacks[sq]
+		att := KnightAttacks[sq]
 		if att&innerZone != 0 {
 			attackers++
 		} else if att&outerZone != 0 {
@@ -227,10 +227,10 @@ func evaluateKingAttack(pos *Position, us, them int) int {
 	// Bishops attacking king zone + tropism
 	bishops := pos.Pieces[us][Bishop]
 	for bishops != 0 {
-		sq := popLSB(&bishops)
-		distance := abs(sqRank(sq)-sqRank(enemyKing)) + abs(sqFile(sq)-sqFile(enemyKing))
+		sq := PopLSB(&bishops)
+		distance := Abs(SqRank(sq)-SqRank(enemyKing)) + Abs(SqFile(sq)-SqFile(enemyKing))
 		bonus += (8 - distance) * 2 // tropism: bishops closer to enemy king
-		att := bishopAttacks(sq, pos.AllOccupied)
+		att := BishopAttacks(sq, pos.AllOccupied)
 		if att&innerZone != 0 {
 			attackers++
 		} else if att&outerZone != 0 {
@@ -241,10 +241,10 @@ func evaluateKingAttack(pos *Position, us, them int) int {
 	// Rooks attacking king zone + tropism
 	rooks := pos.Pieces[us][Rook]
 	for rooks != 0 {
-		sq := popLSB(&rooks)
-		distance := abs(sqRank(sq)-sqRank(enemyKing)) + abs(sqFile(sq)-sqFile(enemyKing))
+		sq := PopLSB(&rooks)
+		distance := Abs(SqRank(sq)-SqRank(enemyKing)) + Abs(SqFile(sq)-SqFile(enemyKing))
 		bonus += (8 - distance) * 2 // tropism: rooks closer to enemy king
-		att := rookAttacks(sq, pos.AllOccupied)
+		att := RookAttacks(sq, pos.AllOccupied)
 		if att&innerZone != 0 {
 			attackers++
 		} else if att&outerZone != 0 {
@@ -255,10 +255,10 @@ func evaluateKingAttack(pos *Position, us, them int) int {
 	// Queens attacking king zone + tropism
 	queens := pos.Pieces[us][Queen]
 	for queens != 0 {
-		sq := popLSB(&queens)
-		distance := abs(sqRank(sq)-sqRank(enemyKing)) + abs(sqFile(sq)-sqFile(enemyKing))
+		sq := PopLSB(&queens)
+		distance := Abs(SqRank(sq)-SqRank(enemyKing)) + Abs(SqFile(sq)-SqFile(enemyKing))
 		bonus += (8 - distance) * 3 // tropism: queen gravitates toward enemy king
-		att := queenAttacks(sq, pos.AllOccupied)
+		att := QueenAttacks(sq, pos.AllOccupied)
 		if att&innerZone != 0 {
 			attackers++
 		} else if att&outerZone != 0 {
@@ -282,8 +282,8 @@ func evaluateKingAttack(pos *Position, us, them int) int {
 	bonus += kingAttackWeight[attackers]
 
 	// Penalty for weak enemy king pawn shield
-	kingFile := sqFile(enemyKing)
-	kingRank := sqRank(enemyKing)
+	kingFile := SqFile(enemyKing)
+	kingRank := SqRank(enemyKing)
 	shieldPawns := 0
 
 	// Count pawns in front of enemy king
@@ -318,7 +318,7 @@ func evaluateKingAttack(pos *Position, us, them int) int {
 	return bonus
 }
 
-func abs(x int) int {
+func Abs(x int) int {
 	if x < 0 {
 		return -x
 	}
@@ -334,30 +334,30 @@ func evaluateRooks(pos *Position, color int) int {
 	enemyKingBB := pos.Pieces[them][King]
 	enemyKingFile := -1
 	if enemyKingBB != 0 {
-		enemyKingFile = sqFile(lsb(enemyKingBB))
+		enemyKingFile = SqFile(Lsb(enemyKingBB))
 	}
 
 	rooks := pos.Pieces[color][Rook]
 	rooksCopy := rooks // save for connected rook check
 	for rooks != 0 {
-		sq := popLSB(&rooks)
-		file := sqFile(sq)
+		sq := PopLSB(&rooks)
+		file := SqFile(sq)
 
 		// Check if file is open (no pawns from either side)
-		fileBB := fileMask[file]
+		fileBB := FileMask[file]
 		ourPawns := pos.Pieces[color][Pawn] & fileBB
 		theirPawns := pos.Pieces[them][Pawn] & fileBB
 
 		if ourPawns == 0 && theirPawns == 0 {
 			bonus += 20 // open file
 			// Extra bonus if open file is near enemy king (aggressive!)
-			if enemyKingFile >= 0 && abs(file-enemyKingFile) <= 1 {
+			if enemyKingFile >= 0 && Abs(file-enemyKingFile) <= 1 {
 				bonus += 25 // rook aimed at king's vicinity!
 			}
 		} else if ourPawns == 0 && theirPawns != 0 {
 			bonus += 10 // semi-open file
 			// Extra bonus if semi-open file is near enemy king
-			if enemyKingFile >= 0 && abs(file-enemyKingFile) <= 1 {
+			if enemyKingFile >= 0 && Abs(file-enemyKingFile) <= 1 {
 				bonus += 15
 			}
 		}
@@ -365,15 +365,15 @@ func evaluateRooks(pos *Position, color int) int {
 
 	// Connected rooks: bonus when two rooks see each other on a rank or file
 	// (no pieces between them). Doubled rooks are a wrecking ball.
-	if popcount(rooksCopy) >= 2 {
+	if Popcount(rooksCopy) >= 2 {
 		rooks = rooksCopy
-		r1 := popLSB(&rooks)
-		r2 := popLSB(&rooks)
-		att := rookAttacks(r1, pos.AllOccupied)
+		r1 := PopLSB(&rooks)
+		r2 := PopLSB(&rooks)
+		att := RookAttacks(r1, pos.AllOccupied)
 		if att&(1<<uint(r2)) != 0 {
 			bonus += 20 // connected rooks
 			// Extra bonus if connected on a file near enemy king
-			if sqFile(r1) == sqFile(r2) && enemyKingFile >= 0 && abs(sqFile(r1)-enemyKingFile) <= 1 {
+			if SqFile(r1) == SqFile(r2) && enemyKingFile >= 0 && Abs(SqFile(r1)-enemyKingFile) <= 1 {
 				bonus += 25 // doubled rooks aimed at king's file!
 			}
 		}
@@ -390,15 +390,15 @@ func evaluateXrays(pos *Position, us, them int) int {
 	if enemyKingBB == 0 {
 		return 0
 	}
-	enemyKingSq := lsb(enemyKingBB)
-	kingZone := kingAttacks[enemyKingSq] | (1 << uint(enemyKingSq))
+	enemyKingSq := Lsb(enemyKingBB)
+	kingZone := KingAttacks[enemyKingSq] | (1 << uint(enemyKingSq))
 	bonus := 0
 
 	// Bishops: bonus if diagonal attacks hit king zone
 	bishops := pos.Pieces[us][Bishop]
 	for bishops != 0 {
-		sq := popLSB(&bishops)
-		att := bishopAttacks(sq, pos.AllOccupied)
+		sq := PopLSB(&bishops)
+		att := BishopAttacks(sq, pos.AllOccupied)
 		if att&kingZone != 0 {
 			bonus += 25 // bishop aiming at king
 		}
@@ -409,12 +409,12 @@ func evaluateXrays(pos *Position, us, them int) int {
 	//  so focus on the diagonal component)
 	queens := pos.Pieces[us][Queen]
 	for queens != 0 {
-		sq := popLSB(&queens)
-		diagAtt := bishopAttacks(sq, pos.AllOccupied)
+		sq := PopLSB(&queens)
+		diagAtt := BishopAttacks(sq, pos.AllOccupied)
 		if diagAtt&kingZone != 0 {
 			bonus += 30 // queen diagonal aimed at king
 		}
-		rankFileAtt := rookAttacks(sq, pos.AllOccupied)
+		rankFileAtt := RookAttacks(sq, pos.AllOccupied)
 		if rankFileAtt&kingZone != 0 {
 			bonus += 20 // queen rank/file aimed at king
 		}
@@ -430,11 +430,11 @@ func evaluatePawns(pos *Position, color int) int {
 
 	// Iterate over each file
 	for file := 0; file < 8; file++ {
-		fileBB := fileMask[file]
+		fileBB := FileMask[file]
 		ourPawnsOnFile := pos.Pieces[color][Pawn] & fileBB
 		theirPawnsOnFile := pos.Pieces[them][Pawn] & fileBB
 
-		count := popcount(ourPawnsOnFile)
+		count := Popcount(ourPawnsOnFile)
 
 		// Doubled pawns penalty (reduced for aggressive play - structure matters less)
 		if count >= 2 {
@@ -445,10 +445,10 @@ func evaluatePawns(pos *Position, color int) int {
 		if count > 0 {
 			adjacent := uint64(0)
 			if file > 0 {
-				adjacent |= fileMask[file-1]
+				adjacent |= FileMask[file-1]
 			}
 			if file < 7 {
-				adjacent |= fileMask[file+1]
+				adjacent |= FileMask[file+1]
 			}
 			if (pos.Pieces[color][Pawn] & adjacent) == 0 {
 				score -= 8 // isolated pawn (was -15)
@@ -463,13 +463,13 @@ func evaluatePawns(pos *Position, color int) int {
 			if color == White {
 				// Find the highest rank
 				for bb != 0 {
-					sq := popLSB(&bb)
-					if bb == 0 || sqRank(sq) > sqRank(mostAdvanced) {
+					sq := PopLSB(&bb)
+					if bb == 0 || SqRank(sq) > SqRank(mostAdvanced) {
 						mostAdvanced = sq
 					}
 				}
 				// Check if it's passed
-				rank := sqRank(mostAdvanced)
+				rank := SqRank(mostAdvanced)
 				blockingMask := uint64(0)
 				// Files to check: current + adjacent
 				for f := file - 1; f <= file+1; f++ {
@@ -487,14 +487,14 @@ func evaluatePawns(pos *Position, color int) int {
 				}
 			} else {
 				// Black pawns
-				mostAdvanced = lsb(ourPawnsOnFile) // lowest rank for black
+				mostAdvanced = Lsb(ourPawnsOnFile) // lowest rank for black
 				for bb != 0 {
-					sq := popLSB(&bb)
-					if sqRank(sq) < sqRank(mostAdvanced) {
+					sq := PopLSB(&bb)
+					if SqRank(sq) < SqRank(mostAdvanced) {
 						mostAdvanced = sq
 					}
 				}
-				rank := sqRank(mostAdvanced)
+				rank := SqRank(mostAdvanced)
 				blockingMask := uint64(0)
 				for f := file - 1; f <= file+1; f++ {
 					if f < 0 || f >= 8 {
@@ -521,14 +521,14 @@ func evaluatePawnStorm(pos *Position, us, them int) int {
 	if enemyKingBB == 0 {
 		return 0
 	}
-	enemyKing := lsb(enemyKingBB)
-	enemyKingFile := sqFile(enemyKing)
+	enemyKing := Lsb(enemyKingBB)
+	enemyKingFile := SqFile(enemyKing)
 
 	// Detect opposite-side castling
 	oppositeSide := false
 	ourKingBB := pos.Pieces[us][King]
 	if ourKingBB != 0 {
-		ourKingFile := sqFile(lsb(ourKingBB))
+		ourKingFile := SqFile(Lsb(ourKingBB))
 		if (ourKingFile <= 2 && enemyKingFile >= 5) || (ourKingFile >= 5 && enemyKingFile <= 2) {
 			oppositeSide = true
 		}
@@ -540,10 +540,10 @@ func evaluatePawnStorm(pos *Position, us, them int) int {
 		if f < 0 || f >= 8 {
 			continue
 		}
-		ourPawns := pos.Pieces[us][Pawn] & fileMask[f]
+		ourPawns := pos.Pieces[us][Pawn] & FileMask[f]
 		for ourPawns != 0 {
-			sq := popLSB(&ourPawns)
-			rank := sqRank(sq)
+			sq := PopLSB(&ourPawns)
+			rank := SqRank(sq)
 			// Bonus for pawns advancing toward enemy king
 			if us == White && rank > 3 {
 				bonus += (rank - 3) * 20 // big bonus for pawn storms!

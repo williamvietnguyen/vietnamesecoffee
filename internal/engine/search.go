@@ -1,4 +1,4 @@
-package main
+package engine
 
 import (
 	"fmt"
@@ -20,19 +20,19 @@ const MaxPly = 128
 const Contempt = 80
 
 type SearchInfo struct {
-	nodes    uint64
-	stopTime time.Time
+	Nodes    uint64
+	StopTime time.Time
 	stopped  int32
-	bestMove Move
-	history  []uint64
-	killers  [MaxPly][2]Move // killer moves: quiet moves that caused beta cutoffs
+	BestMove Move
+	History  []uint64
+	Killers  [MaxPly][2]Move // killer moves: quiet moves that caused beta cutoffs
 }
 
-func (info *SearchInfo) isStopped() bool {
+func (info *SearchInfo) IsStopped() bool {
 	return atomic.LoadInt32(&info.stopped) != 0
 }
 
-func (info *SearchInfo) setStop() {
+func (info *SearchInfo) SetStop() {
 	atomic.StoreInt32(&info.stopped, 1)
 }
 
@@ -45,42 +45,42 @@ const (
 )
 
 type TTEntry struct {
-	key   uint64
-	move  Move
-	score int16
-	depth int8
-	flag  uint8
+	Key   uint64
+	Move  Move
+	Score int16
+	Depth int8
+	Flag  uint8
 }
 
 const DefaultTTSize = 256 // MB
 
-var tt []TTEntry
-var ttMask uint64
+var TT []TTEntry
+var TTMask uint64
 
-func initTT(sizeMB int) {
+func InitTT(sizeMB int) {
 	entries := (sizeMB * 1024 * 1024) / 16
 	size := uint64(1)
 	for size*2 <= uint64(entries) {
 		size *= 2
 	}
-	tt = make([]TTEntry, size)
-	ttMask = size - 1
+	TT = make([]TTEntry, size)
+	TTMask = size - 1
 }
 
-func probeTT(key uint64) (TTEntry, bool) {
-	entry := tt[key&ttMask]
-	if entry.key == key {
+func ProbeTT(key uint64) (TTEntry, bool) {
+	entry := TT[key&TTMask]
+	if entry.Key == key {
 		return entry, true
 	}
 	return entry, false
 }
 
-func storeTT(key uint64, move Move, score int16, depth int8, flag uint8) {
-	tt[key&ttMask] = TTEntry{key: key, move: move, score: score, depth: depth, flag: flag}
+func StoreTT(key uint64, move Move, score int16, depth int8, flag uint8) {
+	TT[key&TTMask] = TTEntry{Key: key, Move: move, Score: score, Depth: depth, Flag: flag}
 }
 
-// scoreMove assigns a sort score for move ordering (higher = search first).
-func scoreMove(pos *Position, m Move, ttMove Move, killers [2]Move) int {
+// ScoreMove assigns a sort score for move ordering (higher = search first).
+func ScoreMove(pos *Position, m Move, ttMove Move, killers [2]Move) int {
 	if m == ttMove && ttMove != 0 {
 		return 30000
 	}
@@ -88,22 +88,22 @@ func scoreMove(pos *Position, m Move, ttMove Move, killers [2]Move) int {
 	if m.IsCapture() {
 		var victimVal int
 		if m.IsEP() {
-			victimVal = pieceValue[Pawn]
+			victimVal = PieceValue[Pawn]
 		} else {
-			_, vic, _ := pos.pieceAt(m.To())
-			victimVal = pieceValue[vic]
+			_, vic, _ := pos.PieceAt(m.To())
+			victimVal = PieceValue[vic]
 		}
-		_, attacker, _ := pos.pieceAt(m.From())
-		attackerVal := pieceValue[attacker]
+		_, attacker, _ := pos.PieceAt(m.From())
+		attackerVal := PieceValue[attacker]
 		score += 10000 + victimVal*10 - attackerVal
 	}
 	if m.IsPromotion() {
-		score += 9000 + pieceValue[m.PromoPiece()]
+		score += 9000 + PieceValue[m.PromoPiece()]
 	}
 	// Bonus for checking moves — explore forcing lines first (aggressive/combinational style)
 	if score < 10000 { // don't bother for moves already scored high (TT, good captures)
-		newPos := pos.makeMove(m)
-		if newPos.inCheck(newPos.SideToMove) {
+		newPos := pos.MakeMove(m)
+		if newPos.InCheck(newPos.SideToMove) {
 			score += 5000
 		}
 	}
@@ -118,8 +118,8 @@ func scoreMove(pos *Position, m Move, ttMove Move, killers [2]Move) int {
 	return score
 }
 
-// pickMove does incremental selection sort: swaps the best-scored move into position i.
-func pickMove(moves []Move, scores []int, i int) {
+// PickMove does incremental selection sort: swaps the best-scored move into position i.
+func PickMove(moves []Move, scores []int, i int) {
 	best := i
 	for j := i + 1; j < len(moves); j++ {
 		if scores[j] > scores[best] {
@@ -132,11 +132,11 @@ func pickMove(moves []Move, scores []int, i int) {
 	}
 }
 
-// quiescence searches captures and promotions to avoid the horizon effect.
-func quiescence(pos *Position, alpha, beta int, info *SearchInfo) int {
-	info.nodes++
+// Quiescence searches captures and promotions to avoid the horizon effect.
+func Quiescence(pos *Position, alpha, beta int, info *SearchInfo) int {
+	info.Nodes++
 
-	eval := evaluate(pos)
+	eval := Evaluate(pos)
 	if eval >= beta {
 		return beta
 	}
@@ -144,7 +144,7 @@ func quiescence(pos *Position, alpha, beta int, info *SearchInfo) int {
 		alpha = eval
 	}
 
-	moves := pos.generateLegalMoves()
+	moves := pos.GenerateLegalMoves()
 	// Filter to captures and promotions only
 	tactical := moves[:0]
 	for _, m := range moves {
@@ -155,16 +155,16 @@ func quiescence(pos *Position, alpha, beta int, info *SearchInfo) int {
 
 	scores := make([]int, len(tactical))
 	for i, m := range tactical {
-		scores[i] = scoreMove(pos, m, 0, [2]Move{})
+		scores[i] = ScoreMove(pos, m, 0, [2]Move{})
 	}
 
 	for i := 0; i < len(tactical); i++ {
-		if info.isStopped() {
+		if info.IsStopped() {
 			return 0
 		}
-		pickMove(tactical, scores, i)
-		newPos := pos.makeMove(tactical[i])
-		score := -quiescence(&newPos, -beta, -alpha, info)
+		PickMove(tactical, scores, i)
+		newPos := pos.MakeMove(tactical[i])
+		score := -Quiescence(&newPos, -beta, -alpha, info)
 		if score >= beta {
 			return beta
 		}
@@ -175,18 +175,18 @@ func quiescence(pos *Position, alpha, beta int, info *SearchInfo) int {
 	return alpha
 }
 
-// negamax is the core alpha-beta search.
-func negamax(pos *Position, depth, ply, alpha, beta int, info *SearchInfo) int {
-	if info.nodes&2047 == 0 && info.nodes > 0 {
-		if time.Now().After(info.stopTime) {
-			info.setStop()
+// Negamax is the core alpha-beta search.
+func Negamax(pos *Position, depth, ply, alpha, beta int, info *SearchInfo) int {
+	if info.Nodes&2047 == 0 && info.Nodes > 0 {
+		if time.Now().After(info.StopTime) {
+			info.SetStop()
 			return 0
 		}
 	}
 
 	// Repetition detection (contempt: treat draws as losing)
 	if ply > 0 {
-		for _, h := range info.history {
+		for _, h := range info.History {
 			if h == pos.Hash {
 				return -Contempt
 			}
@@ -199,29 +199,29 @@ func negamax(pos *Position, depth, ply, alpha, beta int, info *SearchInfo) int {
 	}
 
 	if depth <= 0 {
-		return quiescence(pos, alpha, beta, info)
+		return Quiescence(pos, alpha, beta, info)
 	}
 
-	info.nodes++
+	info.Nodes++
 	origAlpha := alpha
 
 	// TT probe
 	var ttMove Move
-	entry, hit := probeTT(pos.Hash)
+	entry, hit := ProbeTT(pos.Hash)
 	if hit {
-		ttMove = entry.move
-		if int(entry.depth) >= depth {
-			ttScore := int(entry.score)
+		ttMove = entry.Move
+		if int(entry.Depth) >= depth {
+			ttScore := int(entry.Score)
 			// Adjust mate scores from distance-from-root to distance-from-node
 			if ttScore > MateScore-100 {
 				ttScore -= ply
 			} else if ttScore < -MateScore+100 {
 				ttScore += ply
 			}
-			switch entry.flag {
+			switch entry.Flag {
 			case TTExact:
 				if ply == 0 {
-					info.bestMove = entry.move
+					info.BestMove = entry.Move
 				}
 				return ttScore
 			case TTAlpha:
@@ -237,7 +237,7 @@ func negamax(pos *Position, depth, ply, alpha, beta int, info *SearchInfo) int {
 	}
 
 	// Check extension
-	inCheck := pos.inCheck(pos.SideToMove)
+	inCheck := pos.InCheck(pos.SideToMove)
 	if inCheck {
 		depth++
 	}
@@ -254,23 +254,23 @@ func negamax(pos *Position, depth, ply, alpha, beta int, info *SearchInfo) int {
 			skipNMP := false
 			enemyKingBB := pos.Pieces[them][King]
 			if enemyKingBB != 0 {
-				ek := lsb(enemyKingBB)
-				kz := kingAttacks[ek] | (1 << uint(ek))
+				ek := Lsb(enemyKingBB)
+				kz := KingAttacks[ek] | (1 << uint(ek))
 				nmpAttackers := 0
 				for pc := Knight; pc <= Queen; pc++ {
 					bb := pos.Pieces[us][pc]
 					for bb != 0 {
-						sq := popLSB(&bb)
+						sq := PopLSB(&bb)
 						var att uint64
 						switch pc {
 						case Knight:
-							att = knightAttacks[sq]
+							att = KnightAttacks[sq]
 						case Bishop:
-							att = bishopAttacks(sq, pos.AllOccupied)
+							att = BishopAttacks(sq, pos.AllOccupied)
 						case Rook:
-							att = rookAttacks(sq, pos.AllOccupied)
+							att = RookAttacks(sq, pos.AllOccupied)
 						case Queen:
-							att = queenAttacks(sq, pos.AllOccupied)
+							att = QueenAttacks(sq, pos.AllOccupied)
 						}
 						if att&kz != 0 {
 							nmpAttackers++
@@ -286,13 +286,13 @@ func negamax(pos *Position, depth, ply, alpha, beta int, info *SearchInfo) int {
 				// Make null move: flip side, clear EP, update hash
 				nullPos := *pos
 				nullPos.SideToMove ^= 1
-				nullPos.Hash ^= zobristSide
+				nullPos.Hash ^= ZobristSide
 				if nullPos.EnPassant != NoSquare {
-					nullPos.Hash ^= zobristEP[sqFile(nullPos.EnPassant)]
+					nullPos.Hash ^= ZobristEP[SqFile(nullPos.EnPassant)]
 					nullPos.EnPassant = NoSquare
 				}
-				score := -negamax(&nullPos, depth-1-2, ply+1, -beta, -beta+1, info)
-				if info.isStopped() {
+				score := -Negamax(&nullPos, depth-1-2, ply+1, -beta, -beta+1, info)
+				if info.IsStopped() {
 					return 0
 				}
 				if score >= beta {
@@ -302,7 +302,7 @@ func negamax(pos *Position, depth, ply, alpha, beta int, info *SearchInfo) int {
 		}
 	}
 
-	moves := pos.generateLegalMoves()
+	moves := pos.GenerateLegalMoves()
 	if len(moves) == 0 {
 		if inCheck {
 			return -MateScore + ply // checkmate
@@ -312,22 +312,22 @@ func negamax(pos *Position, depth, ply, alpha, beta int, info *SearchInfo) int {
 
 	var plyKillers [2]Move
 	if ply < MaxPly {
-		plyKillers = info.killers[ply]
+		plyKillers = info.Killers[ply]
 	}
 	scores := make([]int, len(moves))
 	for i, m := range moves {
-		scores[i] = scoreMove(pos, m, ttMove, plyKillers)
+		scores[i] = ScoreMove(pos, m, ttMove, plyKillers)
 	}
 
 	bestScore := -SearchInfinity
 	var bestMoveAtNode Move
 	for i := 0; i < len(moves); i++ {
-		if info.isStopped() {
+		if info.IsStopped() {
 			return 0
 		}
-		pickMove(moves, scores, i)
+		PickMove(moves, scores, i)
 		m := moves[i]
-		newPos := pos.makeMove(m)
+		newPos := pos.MakeMove(m)
 
 		// Sacrifice extension: if we gave up material (moving piece worth more
 		// than captured piece) and we have 2+ attackers on the enemy king, extend
@@ -359,27 +359,27 @@ func negamax(pos *Position, depth, ply, alpha, beta int, info *SearchInfo) int {
 				}
 			}
 			// Is this a sacrifice? (giving up more valuable piece)
-			if pieceValue[movingPc] > pieceValue[capturedPc]+50 {
+			if PieceValue[movingPc] > PieceValue[capturedPc]+50 {
 				// Count attackers near enemy king in the new position
 				enemyKingBB := newPos.Pieces[them][King]
 				if enemyKingBB != 0 {
-					enemyKingSq := lsb(enemyKingBB)
-					kingZone := kingAttacks[enemyKingSq] | (1 << uint(enemyKingSq))
+					enemyKingSq := Lsb(enemyKingBB)
+					kingZone := KingAttacks[enemyKingSq] | (1 << uint(enemyKingSq))
 					attackers := 0
 					for pc := Knight; pc <= Queen; pc++ {
 						bb := newPos.Pieces[us][pc]
 						for bb != 0 {
-							sq := popLSB(&bb)
+							sq := PopLSB(&bb)
 							var att uint64
 							switch pc {
 							case Knight:
-								att = knightAttacks[sq]
+								att = KnightAttacks[sq]
 							case Bishop:
-								att = bishopAttacks(sq, newPos.AllOccupied)
+								att = BishopAttacks(sq, newPos.AllOccupied)
 							case Rook:
-								att = rookAttacks(sq, newPos.AllOccupied)
+								att = RookAttacks(sq, newPos.AllOccupied)
 							case Queen:
-								att = queenAttacks(sq, newPos.AllOccupied)
+								att = QueenAttacks(sq, newPos.AllOccupied)
 							}
 							if att&kingZone != 0 {
 								attackers++
@@ -393,12 +393,12 @@ func negamax(pos *Position, depth, ply, alpha, beta int, info *SearchInfo) int {
 			}
 		}
 
-		info.history = append(info.history, pos.Hash)
+		info.History = append(info.History, pos.Hash)
 
 		var score int
 		if i == 0 {
 			// PV move: full depth, full window
-			score = -negamax(&newPos, depth-1+ext, ply+1, -beta, -alpha, info)
+			score = -Negamax(&newPos, depth-1+ext, ply+1, -beta, -alpha, info)
 		} else {
 			// LMR: reduce depth for late quiet moves
 			reduction := 0
@@ -411,36 +411,36 @@ func negamax(pos *Position, depth, ply, alpha, beta int, info *SearchInfo) int {
 			}
 
 			// Search with null window (PVS) and possible reduction (LMR)
-			score = -negamax(&newPos, depth-1-reduction+ext, ply+1, -alpha-1, -alpha, info)
+			score = -Negamax(&newPos, depth-1-reduction+ext, ply+1, -alpha-1, -alpha, info)
 
 			// If reduced search found something interesting, re-search at full depth
 			if reduction > 0 && score > alpha {
-				score = -negamax(&newPos, depth-1+ext, ply+1, -alpha-1, -alpha, info)
+				score = -Negamax(&newPos, depth-1+ext, ply+1, -alpha-1, -alpha, info)
 			}
 
 			// If null window failed high, re-search with full window
 			if score > alpha && score < beta {
-				score = -negamax(&newPos, depth-1+ext, ply+1, -beta, -alpha, info)
+				score = -Negamax(&newPos, depth-1+ext, ply+1, -beta, -alpha, info)
 			}
 		}
 
-		info.history = info.history[:len(info.history)-1]
+		info.History = info.History[:len(info.History)-1]
 		if score > bestScore {
 			bestScore = score
 			bestMoveAtNode = moves[i]
 			if score > alpha {
 				alpha = score
 				if ply == 0 {
-					info.bestMove = moves[i]
+					info.BestMove = moves[i]
 				}
 			}
 		}
 		if score >= beta {
 			// Store killer move (quiet moves only — captures already ordered by MVV-LVA)
 			if !m.IsCapture() && !m.IsPromotion() && ply < MaxPly {
-				if m != info.killers[ply][0] {
-					info.killers[ply][1] = info.killers[ply][0]
-					info.killers[ply][0] = m
+				if m != info.Killers[ply][0] {
+					info.Killers[ply][1] = info.Killers[ply][0]
+					info.Killers[ply][0] = m
 				}
 			}
 			break
@@ -448,7 +448,7 @@ func negamax(pos *Position, depth, ply, alpha, beta int, info *SearchInfo) int {
 	}
 
 	// Store in TT
-	if !info.isStopped() {
+	if !info.IsStopped() {
 		var flag uint8
 		if bestScore <= origAlpha {
 			flag = TTAlpha
@@ -464,15 +464,15 @@ func negamax(pos *Position, depth, ply, alpha, beta int, info *SearchInfo) int {
 		} else if bestScore < -MateScore+100 {
 			storeScore = int16(bestScore - ply)
 		}
-		storeTT(pos.Hash, bestMoveAtNode, storeScore, int8(depth), flag)
+		StoreTT(pos.Hash, bestMoveAtNode, storeScore, int8(depth), flag)
 	}
 
 	return bestScore
 }
 
-// search runs iterative deepening. The caller sets up info (stopTime, history).
+// Search runs iterative deepening. The caller sets up info (StopTime, History).
 // Returns the best move found.
-func search(pos *Position, maxDepth int, info *SearchInfo) Move {
+func Search(pos *Position, maxDepth int, info *SearchInfo) Move {
 	if maxDepth <= 0 {
 		maxDepth = 64
 	}
@@ -482,33 +482,33 @@ func search(pos *Position, maxDepth int, info *SearchInfo) Move {
 	aspirationWindow := 50
 
 	for depth := 1; depth <= maxDepth; depth++ {
-		info.nodes = 0
+		info.Nodes = 0
 		startTime := time.Now()
 
 		var score int
 		if depth <= 4 {
-			score = negamax(pos, depth, 0, -SearchInfinity, SearchInfinity, info)
+			score = Negamax(pos, depth, 0, -SearchInfinity, SearchInfinity, info)
 		} else {
 			alpha := prevScore - aspirationWindow
 			beta := prevScore + aspirationWindow
-			score = negamax(pos, depth, 0, alpha, beta, info)
+			score = Negamax(pos, depth, 0, alpha, beta, info)
 			// If score falls outside the window, re-search with full window
 			if score <= alpha || score >= beta {
-				score = negamax(pos, depth, 0, -SearchInfinity, SearchInfinity, info)
+				score = Negamax(pos, depth, 0, -SearchInfinity, SearchInfinity, info)
 			}
 		}
 
-		if info.isStopped() {
+		if info.IsStopped() {
 			break
 		}
 		prevScore = score
-		bestMove = info.bestMove
+		bestMove = info.BestMove
 		elapsed := time.Since(startTime)
 		elapsedMs := elapsed.Milliseconds()
 		if elapsedMs == 0 {
 			elapsedMs = 1
 		}
-		nps := info.nodes * 1000 / uint64(elapsedMs)
+		nps := info.Nodes * 1000 / uint64(elapsedMs)
 
 		// Print UCI info line
 		scoreStr := fmt.Sprintf("cp %d", score)
@@ -520,7 +520,7 @@ func search(pos *Position, maxDepth int, info *SearchInfo) Move {
 			scoreStr = fmt.Sprintf("mate %d", mateIn)
 		}
 		fmt.Printf("info depth %d score %s nodes %d nps %d time %d\n",
-			depth, scoreStr, info.nodes, nps, elapsed.Milliseconds())
+			depth, scoreStr, info.Nodes, nps, elapsed.Milliseconds())
 	}
 
 	return bestMove

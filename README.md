@@ -9,13 +9,13 @@ VietCoffee speaks the UCI protocol for use with chess GUIs, and includes a built
 Requires Go 1.21 or later.
 
 ```
-go build -o viet_coffee .
+go build -o viet_coffee ./cmd/vietnamesecoffee
 ```
 
 Or run directly:
 
 ```
-go run .
+go run ./cmd/vietnamesecoffee
 ```
 
 ## Usage
@@ -203,7 +203,7 @@ Verify: `go version`
 ```bash
 git clone https://github.com/williamvietnguyen/vietnamesecoffee.git
 cd vietnamesecoffee
-go build -o viet_coffee .
+go build -o viet_coffee ./cmd/vietnamesecoffee
 ```
 
 Run the perft suite to confirm the build is correct:
@@ -315,16 +315,24 @@ Replace the version tag and architecture as needed.
 
 ## Architecture
 
-No external dependencies — stdlib only. The code is organized into focused files, all in `package main`:
+No external dependencies — stdlib only. The code is organized into a standard Go `cmd/` + `internal/` layout:
 
-| File | Contents |
-|---|---|
-| `board.go` | Constants, types, Move encoding, bitboard utilities, attack tables, Zobrist hashing, sliding piece attacks, position helpers |
-| `movegen.go` | FEN parsing, pseudo-legal + legal move generation, make move |
-| `eval.go` | Material values, piece-square tables, evaluation (king attack, rooks, x-rays, pawns, pawn storm) |
-| `search.go` | Transposition table, move ordering, quiescence, negamax (PVS, LMR, null move pruning, killer moves, aspiration windows), iterative deepening |
-| `perft.go` | Perft and divide |
-| `uci.go` | UCI move parsing, board display, UCI loop |
-| `perft_suite.go` | Perft test suite (6 standard positions) |
-| `main.go` | Entry point |
-| `lichess.go` | Lichess Bot API client |
+```
+vietnamesecoffee/
+├── cmd/vietnamesecoffee/
+│   └── main.go              # Entry point
+├── internal/
+│   ├── engine/
+│   │   ├── board.go          # Constants, types, Move encoding, bitboard utilities, attack tables, Zobrist hashing, sliding piece attacks, position helpers
+│   │   ├── movegen.go        # FEN parsing, pseudo-legal + legal move generation, make move
+│   │   ├── eval.go           # Material values, piece-square tables, evaluation (king attack, rooks, x-rays, pawns, pawn storm)
+│   │   ├── search.go         # Transposition table, move ordering, quiescence, negamax (PVS, LMR, NMP, killer moves, aspiration windows), iterative deepening
+│   │   └── perft.go          # Perft, divide, UCI move parsing, perft test suite
+│   ├── uci/
+│   │   └── uci.go            # UCI protocol loop, board display
+│   └── lichess/
+│       └── lichess.go        # Lichess Bot API client
+├── build.sh
+├── go.mod
+└── README.md
+```

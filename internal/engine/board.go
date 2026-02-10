@@ -1,4 +1,4 @@
-package main
+package engine
 
 import (
 	"math/bits"
@@ -68,7 +68,7 @@ const (
 // Move is a uint32 encoding: from(6) | to(6) | flags(4)
 type Move uint32
 
-func newMove(from, to, flags int) Move {
+func NewMove(from, to, flags int) Move {
 	return Move(from | (to << 6) | (flags << 12))
 }
 
@@ -108,7 +108,7 @@ type Position struct {
 	FullMoveNumber int
 }
 
-func (p *Position) updateOccupied() {
+func (p *Position) UpdateOccupied() {
 	p.Occupied[White] = p.Pieces[White][Pawn] | p.Pieces[White][Knight] |
 		p.Pieces[White][Bishop] | p.Pieces[White][Rook] |
 		p.Pieces[White][Queen] | p.Pieces[White][King]
@@ -122,27 +122,27 @@ func (p *Position) updateOccupied() {
 // Section 2: Bitboard Utilities
 // ============================================================
 
-func popcount(b uint64) int    { return bits.OnesCount64(b) }
-func lsb(b uint64) int         { return bits.TrailingZeros64(b) }
+func Popcount(b uint64) int    { return bits.OnesCount64(b) }
+func Lsb(b uint64) int         { return bits.TrailingZeros64(b) }
 
-func popLSB(b *uint64) int {
-	sq := lsb(*b)
+func PopLSB(b *uint64) int {
+	sq := Lsb(*b)
 	*b &= *b - 1
 	return sq
 }
 
-func sqFile(sq int) int { return sq & 7 }
-func sqRank(sq int) int { return sq >> 3 }
+func SqFile(sq int) int { return sq & 7 }
+func SqRank(sq int) int { return sq >> 3 }
 
 // File masks
-var fileMask [8]uint64
-var rankMask [8]uint64
+var FileMask [8]uint64
+var RankMask [8]uint64
 
 func initMasks() {
 	for f := 0; f < 8; f++ {
 		for r := 0; r < 8; r++ {
-			fileMask[f] |= 1 << uint(r*8+f)
-			rankMask[r] |= 1 << uint(r*8+f)
+			FileMask[f] |= 1 << uint(r*8+f)
+			RankMask[r] |= 1 << uint(r*8+f)
 		}
 	}
 }
@@ -158,21 +158,21 @@ const (
 // Section 3: Attack Tables & Init
 // ============================================================
 
-var knightAttacks [64]uint64
-var kingAttacks [64]uint64
-var pawnAttacks [2][64]uint64
+var KnightAttacks [64]uint64
+var KingAttacks [64]uint64
+var PawnAttacks [2][64]uint64
 
-func initAttacks() {
+func InitAttacks() {
 	initMasks()
 
 	// Knight attacks
 	knightDeltas := [][2]int{{-2, -1}, {-2, 1}, {-1, -2}, {-1, 2}, {1, -2}, {1, 2}, {2, -1}, {2, 1}}
 	for sq := 0; sq < 64; sq++ {
-		r, f := sqRank(sq), sqFile(sq)
+		r, f := SqRank(sq), SqFile(sq)
 		for _, d := range knightDeltas {
 			nr, nf := r+d[0], f+d[1]
 			if nr >= 0 && nr < 8 && nf >= 0 && nf < 8 {
-				knightAttacks[sq] |= 1 << uint(nr*8+nf)
+				KnightAttacks[sq] |= 1 << uint(nr*8+nf)
 			}
 		}
 	}
@@ -180,60 +180,60 @@ func initAttacks() {
 	// King attacks
 	kingDeltas := [][2]int{{-1, -1}, {-1, 0}, {-1, 1}, {0, -1}, {0, 1}, {1, -1}, {1, 0}, {1, 1}}
 	for sq := 0; sq < 64; sq++ {
-		r, f := sqRank(sq), sqFile(sq)
+		r, f := SqRank(sq), SqFile(sq)
 		for _, d := range kingDeltas {
 			nr, nf := r+d[0], f+d[1]
 			if nr >= 0 && nr < 8 && nf >= 0 && nf < 8 {
-				kingAttacks[sq] |= 1 << uint(nr*8+nf)
+				KingAttacks[sq] |= 1 << uint(nr*8+nf)
 			}
 		}
 	}
 
 	// Pawn attacks
 	for sq := 0; sq < 64; sq++ {
-		r, f := sqRank(sq), sqFile(sq)
+		r, f := SqRank(sq), SqFile(sq)
 		// White pawns attack up-left and up-right
 		if r < 7 {
 			if f > 0 {
-				pawnAttacks[White][sq] |= 1 << uint((r+1)*8+(f-1))
+				PawnAttacks[White][sq] |= 1 << uint((r+1)*8+(f-1))
 			}
 			if f < 7 {
-				pawnAttacks[White][sq] |= 1 << uint((r+1)*8+(f+1))
+				PawnAttacks[White][sq] |= 1 << uint((r+1)*8+(f+1))
 			}
 		}
 		// Black pawns attack down-left and down-right
 		if r > 0 {
 			if f > 0 {
-				pawnAttacks[Black][sq] |= 1 << uint((r-1)*8+(f-1))
+				PawnAttacks[Black][sq] |= 1 << uint((r-1)*8+(f-1))
 			}
 			if f < 7 {
-				pawnAttacks[Black][sq] |= 1 << uint((r-1)*8+(f+1))
+				PawnAttacks[Black][sq] |= 1 << uint((r-1)*8+(f+1))
 			}
 		}
 	}
 }
 
 // Zobrist hashing
-var zobristPiece [2][6][64]uint64
-var zobristSide uint64
-var zobristCastling [16]uint64
-var zobristEP [8]uint64
+var ZobristPiece [2][6][64]uint64
+var ZobristSide uint64
+var ZobristCastling [16]uint64
+var ZobristEP [8]uint64
 
-func initZobrist() {
+func InitZobrist() {
 	rng := rand.New(rand.NewSource(1070372))
 	for c := 0; c < 2; c++ {
 		for pc := 0; pc < 6; pc++ {
 			for sq := 0; sq < 64; sq++ {
-				zobristPiece[c][pc][sq] = rng.Uint64()
+				ZobristPiece[c][pc][sq] = rng.Uint64()
 			}
 		}
 	}
-	zobristSide = rng.Uint64()
+	ZobristSide = rng.Uint64()
 	for i := 0; i < 16; i++ {
-		zobristCastling[i] = rng.Uint64()
+		ZobristCastling[i] = rng.Uint64()
 	}
 	for i := 0; i < 8; i++ {
-		zobristEP[i] = rng.Uint64()
+		ZobristEP[i] = rng.Uint64()
 	}
 }
 
@@ -241,11 +241,11 @@ func initZobrist() {
 // Section 4: Sliding Piece Attacks
 // ============================================================
 
-func bishopAttacks(sq int, occ uint64) uint64 {
+func BishopAttacks(sq int, occ uint64) uint64 {
 	var attacks uint64
 	directions := [][2]int{{1, 1}, {1, -1}, {-1, 1}, {-1, -1}}
 	for _, d := range directions {
-		r, f := sqRank(sq)+d[0], sqFile(sq)+d[1]
+		r, f := SqRank(sq)+d[0], SqFile(sq)+d[1]
 		for r >= 0 && r < 8 && f >= 0 && f < 8 {
 			bit := uint64(1) << uint(r*8+f)
 			attacks |= bit
@@ -259,11 +259,11 @@ func bishopAttacks(sq int, occ uint64) uint64 {
 	return attacks
 }
 
-func rookAttacks(sq int, occ uint64) uint64 {
+func RookAttacks(sq int, occ uint64) uint64 {
 	var attacks uint64
 	directions := [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
 	for _, d := range directions {
-		r, f := sqRank(sq)+d[0], sqFile(sq)+d[1]
+		r, f := SqRank(sq)+d[0], SqFile(sq)+d[1]
 		for r >= 0 && r < 8 && f >= 0 && f < 8 {
 			bit := uint64(1) << uint(r*8+f)
 			attacks |= bit
@@ -277,46 +277,46 @@ func rookAttacks(sq int, occ uint64) uint64 {
 	return attacks
 }
 
-func queenAttacks(sq int, occ uint64) uint64 {
-	return bishopAttacks(sq, occ) | rookAttacks(sq, occ)
+func QueenAttacks(sq int, occ uint64) uint64 {
+	return BishopAttacks(sq, occ) | RookAttacks(sq, occ)
 }
 
 // ============================================================
 // Section 5: Position Helpers
 // ============================================================
 
-func (p *Position) isSquareAttacked(sq int, byColor int) bool {
+func (p *Position) IsSquareAttacked(sq int, byColor int) bool {
 	// Pawn attacks: is sq attacked by a pawn of byColor?
-	// If a White pawn on X attacks sq, then sq is in pawnAttacks[White][X].
-	// Equivalently, X is in pawnAttacks[Black][sq] (reverse direction).
-	if pawnAttacks[byColor^1][sq]&p.Pieces[byColor][Pawn] != 0 {
+	// If a White pawn on X attacks sq, then sq is in PawnAttacks[White][X].
+	// Equivalently, X is in PawnAttacks[Black][sq] (reverse direction).
+	if PawnAttacks[byColor^1][sq]&p.Pieces[byColor][Pawn] != 0 {
 		return true
 	}
-	if knightAttacks[sq]&p.Pieces[byColor][Knight] != 0 {
+	if KnightAttacks[sq]&p.Pieces[byColor][Knight] != 0 {
 		return true
 	}
-	if kingAttacks[sq]&p.Pieces[byColor][King] != 0 {
+	if KingAttacks[sq]&p.Pieces[byColor][King] != 0 {
 		return true
 	}
-	if bishopAttacks(sq, p.AllOccupied)&(p.Pieces[byColor][Bishop]|p.Pieces[byColor][Queen]) != 0 {
+	if BishopAttacks(sq, p.AllOccupied)&(p.Pieces[byColor][Bishop]|p.Pieces[byColor][Queen]) != 0 {
 		return true
 	}
-	if rookAttacks(sq, p.AllOccupied)&(p.Pieces[byColor][Rook]|p.Pieces[byColor][Queen]) != 0 {
+	if RookAttacks(sq, p.AllOccupied)&(p.Pieces[byColor][Rook]|p.Pieces[byColor][Queen]) != 0 {
 		return true
 	}
 	return false
 }
 
-func (p *Position) inCheck(color int) bool {
+func (p *Position) InCheck(color int) bool {
 	kingBB := p.Pieces[color][King]
 	if kingBB == 0 {
 		return false
 	}
-	kingSq := lsb(kingBB)
-	return p.isSquareAttacked(kingSq, color^1)
+	kingSq := Lsb(kingBB)
+	return p.IsSquareAttacked(kingSq, color^1)
 }
 
-func (p *Position) pieceAt(sq int) (color int, piece int, found bool) {
+func (p *Position) PieceAt(sq int) (color int, piece int, found bool) {
 	bit := uint64(1) << uint(sq)
 	for c := 0; c < 2; c++ {
 		if p.Occupied[c]&bit == 0 {

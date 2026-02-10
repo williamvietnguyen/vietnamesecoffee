@@ -1,4 +1,4 @@
-package main
+package uci
 
 import (
 	"bufio"
@@ -7,48 +7,12 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"vietnamesecoffee/internal/engine"
 )
 
-// ============================================================
-// Section 12: UCI Helpers
-// ============================================================
-
-// parseUCIMove converts a UCI move string (e.g. "e2e4", "e7e8q") into a Move
-// by matching against the legal moves in the current position.
-func parseUCIMove(pos *Position, uci string) (Move, bool) {
-	if len(uci) < 4 {
-		return 0, false
-	}
-	fromFile := int(uci[0] - 'a')
-	fromRank := int(uci[1] - '1')
-	toFile := int(uci[2] - 'a')
-	toRank := int(uci[3] - '1')
-	from := fromRank*8 + fromFile
-	to := toRank*8 + toFile
-
-	var promoChar byte
-	if len(uci) == 5 {
-		promoChar = uci[4]
-	}
-
-	moves := pos.generateLegalMoves()
-	for _, m := range moves {
-		if m.From() != from || m.To() != to {
-			continue
-		}
-		if m.IsPromotion() {
-			pc := "nbrq"[m.Flags()&0x3]
-			if promoChar != pc {
-				continue
-			}
-		}
-		return m, true
-	}
-	return 0, false
-}
-
 // printBoard prints an ASCII representation of the board (for the "d" debug command).
-func printBoard(pos *Position) {
+func printBoard(pos *engine.Position) {
 	pieceChars := [2][6]byte{
 		{'P', 'N', 'B', 'R', 'Q', 'K'},
 		{'p', 'n', 'b', 'r', 'q', 'k'},
@@ -58,7 +22,7 @@ func printBoard(pos *Position) {
 		fmt.Printf("  %d ", rank+1)
 		for file := 0; file < 8; file++ {
 			sq := rank*8 + file
-			c, pc, found := pos.pieceAt(sq)
+			c, pc, found := pos.PieceAt(sq)
 			if found {
 				fmt.Printf(" %c", pieceChars[c][pc])
 			} else {
@@ -69,47 +33,44 @@ func printBoard(pos *Position) {
 	}
 	fmt.Println("     a b c d e f g h")
 	fmt.Println()
-	if pos.SideToMove == White {
+	if pos.SideToMove == engine.White {
 		fmt.Println("  Side: White")
 	} else {
 		fmt.Println("  Side: Black")
 	}
 	castling := ""
-	if pos.CastlingRights&WhiteKingSide != 0 {
+	if pos.CastlingRights&engine.WhiteKingSide != 0 {
 		castling += "K"
 	}
-	if pos.CastlingRights&WhiteQueenSide != 0 {
+	if pos.CastlingRights&engine.WhiteQueenSide != 0 {
 		castling += "Q"
 	}
-	if pos.CastlingRights&BlackKingSide != 0 {
+	if pos.CastlingRights&engine.BlackKingSide != 0 {
 		castling += "k"
 	}
-	if pos.CastlingRights&BlackQueenSide != 0 {
+	if pos.CastlingRights&engine.BlackQueenSide != 0 {
 		castling += "q"
 	}
 	if castling == "" {
 		castling = "-"
 	}
 	fmt.Printf("  Castling: %s\n", castling)
-	if pos.EnPassant != NoSquare {
-		fmt.Printf("  En passant: %c%c\n", 'a'+rune(sqFile(pos.EnPassant)), '1'+rune(sqRank(pos.EnPassant)))
+	if pos.EnPassant != engine.NoSquare {
+		fmt.Printf("  En passant: %c%c\n", 'a'+rune(engine.SqFile(pos.EnPassant)), '1'+rune(engine.SqRank(pos.EnPassant)))
 	} else {
 		fmt.Println("  En passant: -")
 	}
 	fmt.Println()
 }
 
-// ============================================================
-// Section 13: UCI Loop
-// ============================================================
-
-func uciLoop() {
-	pos := parseFEN("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+// Run starts the UCI protocol loop.
+func Run() {
+	pos := engine.ParseFEN("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 
 	var gameHistory []uint64
-	var currentInfo *SearchInfo
+	var currentInfo *engine.SearchInfo
 	var searchDone chan struct{}
 
 	for scanner.Scan() {
@@ -131,9 +92,9 @@ func uciLoop() {
 			fmt.Println("readyok")
 
 		case "ucinewgame":
-			pos = parseFEN("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+			pos = engine.ParseFEN("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
 			gameHistory = nil
-			initTT(DefaultTTSize)
+			engine.InitTT(engine.DefaultTTSize)
 
 		case "position":
 			if len(tokens) < 2 {
@@ -141,7 +102,7 @@ func uciLoop() {
 			}
 			movesIdx := -1
 			if tokens[1] == "startpos" {
-				pos = parseFEN("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+				pos = engine.ParseFEN("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
 				// Find "moves" token
 				for i := 2; i < len(tokens); i++ {
 					if tokens[i] == "moves" {
@@ -158,7 +119,7 @@ func uciLoop() {
 					idx++
 				}
 				if len(fenParts) > 0 {
-					pos = parseFEN(strings.Join(fenParts, " "))
+					pos = engine.ParseFEN(strings.Join(fenParts, " "))
 				}
 				if idx < len(tokens) && tokens[idx] == "moves" {
 					movesIdx = idx + 1
@@ -168,9 +129,9 @@ func uciLoop() {
 			gameHistory = []uint64{pos.Hash}
 			if movesIdx >= 0 {
 				for i := movesIdx; i < len(tokens); i++ {
-					m, ok := parseUCIMove(&pos, tokens[i])
+					m, ok := engine.ParseUCIMove(&pos, tokens[i])
 					if ok {
-						pos = pos.makeMove(m)
+						pos = pos.MakeMove(m)
 						gameHistory = append(gameHistory, pos.Hash)
 					}
 				}
@@ -180,7 +141,7 @@ func uciLoop() {
 			if len(tokens) >= 3 && tokens[1] == "perft" {
 				depth, err := strconv.Atoi(tokens[2])
 				if err == nil && depth > 0 {
-					divide(&pos, depth)
+					engine.Divide(&pos, depth)
 				}
 			} else {
 				fixedDepth := 0
@@ -211,7 +172,7 @@ func uciLoop() {
 					case "wtime":
 						if i+1 < len(tokens) {
 							wt, err := strconv.Atoi(tokens[i+1])
-							if err == nil && pos.SideToMove == White {
+							if err == nil && pos.SideToMove == engine.White {
 								timeLeft = wt
 							}
 							i++
@@ -219,7 +180,7 @@ func uciLoop() {
 					case "btime":
 						if i+1 < len(tokens) {
 							bt, err := strconv.Atoi(tokens[i+1])
-							if err == nil && pos.SideToMove == Black {
+							if err == nil && pos.SideToMove == engine.Black {
 								timeLeft = bt
 							}
 							i++
@@ -227,7 +188,7 @@ func uciLoop() {
 					case "winc":
 						if i+1 < len(tokens) {
 							wi, err := strconv.Atoi(tokens[i+1])
-							if err == nil && pos.SideToMove == White {
+							if err == nil && pos.SideToMove == engine.White {
 								inc = wi
 							}
 							i++
@@ -235,7 +196,7 @@ func uciLoop() {
 					case "binc":
 						if i+1 < len(tokens) {
 							bi, err := strconv.Atoi(tokens[i+1])
-							if err == nil && pos.SideToMove == Black {
+							if err == nil && pos.SideToMove == engine.Black {
 								inc = bi
 							}
 							i++
@@ -290,22 +251,22 @@ func uciLoop() {
 					allocatedTime = 5000 // fallback
 				}
 
-				info := &SearchInfo{}
-				info.stopTime = time.Now().Add(time.Duration(allocatedTime) * time.Millisecond)
+				info := &engine.SearchInfo{}
+				info.StopTime = time.Now().Add(time.Duration(allocatedTime) * time.Millisecond)
 				// Copy game history (all positions before the current one) for repetition detection
 				if len(gameHistory) > 1 {
-					info.history = make([]uint64, len(gameHistory)-1)
-					copy(info.history, gameHistory[:len(gameHistory)-1])
+					info.History = make([]uint64, len(gameHistory)-1)
+					copy(info.History, gameHistory[:len(gameHistory)-1])
 				}
 				currentInfo = info
 				searchDone = make(chan struct{})
 				searchPos := pos
 				go func() {
-					bestMove := search(&searchPos, fixedDepth, info)
+					bestMove := engine.Search(&searchPos, fixedDepth, info)
 					if bestMove == 0 {
 						fmt.Println("bestmove 0000")
 					} else {
-						fmt.Printf("bestmove %s\n", moveToString(bestMove))
+						fmt.Printf("bestmove %s\n", engine.MoveToString(bestMove))
 					}
 					close(searchDone)
 				}()
@@ -313,7 +274,7 @@ func uciLoop() {
 
 		case "stop":
 			if currentInfo != nil {
-				currentInfo.setStop()
+				currentInfo.SetStop()
 				if searchDone != nil {
 					<-searchDone
 				}
@@ -325,7 +286,7 @@ func uciLoop() {
 
 		case "quit":
 			if currentInfo != nil {
-				currentInfo.setStop()
+				currentInfo.SetStop()
 				if searchDone != nil {
 					<-searchDone
 				}

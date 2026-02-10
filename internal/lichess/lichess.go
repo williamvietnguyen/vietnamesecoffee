@@ -1,4 +1,4 @@
-package main
+package lichess
 
 import (
 	"bufio"
@@ -16,10 +16,12 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"vietnamesecoffee/internal/engine"
 )
 
 // ============================================================
-// Section 16: Lichess Bot Integration
+// Lichess Bot Integration
 // ============================================================
 
 const (
@@ -334,12 +336,12 @@ func (bot *lichessBot) shouldAcceptChallenge(ch *lichessChallenge) (bool, string
 
 // --- Position setup + time computation ---
 
-func buildPosition(initialFen, movesStr string) (Position, []uint64) {
+func buildPosition(initialFen, movesStr string) (engine.Position, []uint64) {
 	fen := initialFen
 	if fen == "" || fen == "startpos" {
 		fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 	}
-	pos := parseFEN(fen)
+	pos := engine.ParseFEN(fen)
 	history := []uint64{pos.Hash}
 
 	if movesStr == "" {
@@ -348,12 +350,12 @@ func buildPosition(initialFen, movesStr string) (Position, []uint64) {
 
 	moves := strings.Fields(movesStr)
 	for _, uci := range moves {
-		m, ok := parseUCIMove(&pos, uci)
+		m, ok := engine.ParseUCIMove(&pos, uci)
 		if !ok {
 			log.Printf("[lichess] failed to parse move: %s\n", uci)
 			break
 		}
-		pos = pos.makeMove(m)
+		pos = pos.MakeMove(m)
 		history = append(history, pos.Hash)
 	}
 	return pos, history
@@ -361,7 +363,7 @@ func buildPosition(initialFen, movesStr string) (Position, []uint64) {
 
 func computeSearchTime(wtime, btime, winc, binc, botColor int) int {
 	var timeLeft, inc int
-	if botColor == White {
+	if botColor == engine.White {
 		timeLeft = wtime
 		inc = winc
 	} else {
@@ -420,7 +422,7 @@ func (bot *lichessBot) playGame(gameID string) {
 	var botColor int
 	var gameFull lichessGameFull
 	var gotFull bool
-	var currentSearch *SearchInfo
+	var currentSearch *engine.SearchInfo
 
 	stateCh := make(chan lichessGameState, 8)
 
@@ -436,7 +438,7 @@ func (bot *lichessBot) playGame(gameID string) {
 				}
 				// Stop any running search
 				if currentSearch != nil {
-					currentSearch.setStop()
+					currentSearch.SetStop()
 				}
 
 				if state.Status != "started" {
@@ -452,15 +454,15 @@ func (bot *lichessBot) playGame(gameID string) {
 
 				allocatedTime := computeSearchTime(state.Wtime, state.Btime, state.Winc, state.Binc, botColor)
 
-				info := &SearchInfo{}
-				info.stopTime = time.Now().Add(time.Duration(allocatedTime) * time.Millisecond)
+				info := &engine.SearchInfo{}
+				info.StopTime = time.Now().Add(time.Duration(allocatedTime) * time.Millisecond)
 				if len(history) > 1 {
-					info.history = make([]uint64, len(history)-1)
-					copy(info.history, history[:len(history)-1])
+					info.History = make([]uint64, len(history)-1)
+					copy(info.History, history[:len(history)-1])
 				}
 				currentSearch = info
 
-				bestMove := search(&pos, 0, info)
+				bestMove := engine.Search(&pos, 0, info)
 				currentSearch = nil
 
 				if bestMove == 0 {
@@ -468,7 +470,7 @@ func (bot *lichessBot) playGame(gameID string) {
 					bot.resign(gameID)
 					return
 				}
-				moveStr := moveToString(bestMove)
+				moveStr := engine.MoveToString(bestMove)
 				log.Printf("[game %s] playing %s\n", gameID, moveStr)
 				bot.postMove(gameID, moveStr)
 			}
@@ -492,10 +494,10 @@ func (bot *lichessBot) playGame(gameID string) {
 
 			// Determine bot color
 			if strings.ToLower(gameFull.Black.ID) == bot.botID {
-				botColor = Black
+				botColor = engine.Black
 				log.Printf("[game %s] playing as Black vs %s\n", gameID, gameFull.White.Name)
 			} else {
-				botColor = White
+				botColor = engine.White
 				log.Printf("[game %s] playing as White vs %s\n", gameID, gameFull.Black.Name)
 			}
 
@@ -538,7 +540,7 @@ func (bot *lichessBot) playGame(gameID string) {
 
 	// Stream closed, stop any running search
 	if currentSearch != nil {
-		currentSearch.setStop()
+		currentSearch.SetStop()
 	}
 	close(stateCh)
 }
@@ -673,7 +675,8 @@ func (bot *lichessBot) waitForShutdown() {
 
 // --- Entry point ---
 
-func lichessMain() {
+// Run starts the Lichess bot.
+func Run() {
 	token := os.Getenv("LICHESS_TOKEN")
 	if token == "" {
 		log.Fatal("[lichess] LICHESS_TOKEN environment variable is required")

@@ -1,4 +1,4 @@
-package main
+package engine
 
 import (
 	"fmt"
@@ -6,7 +6,95 @@ import (
 )
 
 // ============================================================
-// Section 14: Perft Suite
+// Perft, Divide, and ParseUCIMove
+// ============================================================
+
+func Perft(pos *Position, depth int) uint64 {
+	if depth == 0 {
+		return 1
+	}
+
+	moves := pos.GenerateLegalMoves()
+
+	if depth == 1 {
+		return uint64(len(moves))
+	}
+
+	var nodes uint64
+	for _, m := range moves {
+		newPos := pos.MakeMove(m)
+		nodes += Perft(&newPos, depth-1)
+	}
+	return nodes
+}
+
+func Divide(pos *Position, depth int) uint64 {
+	moves := pos.GenerateLegalMoves()
+	var total uint64
+	for _, m := range moves {
+		newPos := pos.MakeMove(m)
+		var count uint64
+		if depth-1 == 0 {
+			count = 1
+		} else {
+			count = Perft(&newPos, depth-1)
+		}
+		total += count
+		fmt.Printf("%s: %d\n", MoveToString(m), count)
+	}
+	fmt.Printf("\nTotal: %d\n", total)
+	return total
+}
+
+func MoveToString(m Move) string {
+	from := m.From()
+	to := m.To()
+	s := fmt.Sprintf("%c%c%c%c",
+		'a'+rune(SqFile(from)), '1'+rune(SqRank(from)),
+		'a'+rune(SqFile(to)), '1'+rune(SqRank(to)))
+	if m.IsPromotion() {
+		promoChars := "nbrq"
+		s += string(promoChars[m.Flags()&0x3])
+	}
+	return s
+}
+
+// ParseUCIMove converts a UCI move string (e.g. "e2e4", "e7e8q") into a Move
+// by matching against the legal moves in the current position.
+func ParseUCIMove(pos *Position, uci string) (Move, bool) {
+	if len(uci) < 4 {
+		return 0, false
+	}
+	fromFile := int(uci[0] - 'a')
+	fromRank := int(uci[1] - '1')
+	toFile := int(uci[2] - 'a')
+	toRank := int(uci[3] - '1')
+	from := fromRank*8 + fromFile
+	to := toRank*8 + toFile
+
+	var promoChar byte
+	if len(uci) == 5 {
+		promoChar = uci[4]
+	}
+
+	moves := pos.GenerateLegalMoves()
+	for _, m := range moves {
+		if m.From() != from || m.To() != to {
+			continue
+		}
+		if m.IsPromotion() {
+			pc := "nbrq"[m.Flags()&0x3]
+			if promoChar != pc {
+				continue
+			}
+		}
+		return m, true
+	}
+	return 0, false
+}
+
+// ============================================================
+// Perft Suite
 // ============================================================
 
 type perftTest struct {
@@ -15,7 +103,7 @@ type perftTest struct {
 	results map[int]uint64
 }
 
-func runPerftSuite() {
+func RunPerftSuite() {
 	tests := []perftTest{
 		{
 			name: "Startpos",
@@ -89,7 +177,7 @@ func runPerftSuite() {
 	allPassed := true
 	for _, test := range tests {
 		fmt.Printf("=== %s ===\n", test.name)
-		pos := parseFEN(test.fen)
+		pos := ParseFEN(test.fen)
 
 		passed := true
 		for depth := 1; depth <= 5; depth++ {
@@ -99,7 +187,7 @@ func runPerftSuite() {
 			}
 
 			start := time.Now()
-			result := perft(&pos, depth)
+			result := Perft(&pos, depth)
 			elapsed := time.Since(start)
 
 			status := "PASS"
@@ -123,7 +211,7 @@ func runPerftSuite() {
 
 		if expected, ok := test.results[6]; ok {
 			start := time.Now()
-			result := perft(&pos, 6)
+			result := Perft(&pos, 6)
 			elapsed := time.Since(start)
 
 			status := "PASS"
@@ -149,3 +237,4 @@ func runPerftSuite() {
 		fmt.Println("SOME TESTS FAILED!")
 	}
 }
+

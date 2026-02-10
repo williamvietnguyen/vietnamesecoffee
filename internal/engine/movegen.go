@@ -1,4 +1,4 @@
-package main
+package engine
 
 import (
 	"strings"
@@ -8,7 +8,7 @@ import (
 // Section 6: FEN Parsing
 // ============================================================
 
-func parseFEN(fen string) Position {
+func ParseFEN(fen string) Position {
 	var pos Position
 	pos.EnPassant = NoSquare
 
@@ -103,24 +103,24 @@ func parseFEN(fen string) Position {
 		}
 	}
 
-	pos.updateOccupied()
+	pos.UpdateOccupied()
 
 	// Compute Zobrist hash
 	for c := 0; c < 2; c++ {
 		for pc := 0; pc < 6; pc++ {
 			bb := pos.Pieces[c][pc]
 			for bb != 0 {
-				sq := popLSB(&bb)
-				pos.Hash ^= zobristPiece[c][pc][sq]
+				sq := PopLSB(&bb)
+				pos.Hash ^= ZobristPiece[c][pc][sq]
 			}
 		}
 	}
-	pos.Hash ^= zobristCastling[pos.CastlingRights]
+	pos.Hash ^= ZobristCastling[pos.CastlingRights]
 	if pos.EnPassant != NoSquare {
-		pos.Hash ^= zobristEP[sqFile(pos.EnPassant)]
+		pos.Hash ^= ZobristEP[SqFile(pos.EnPassant)]
 	}
 	if pos.SideToMove == Black {
-		pos.Hash ^= zobristSide
+		pos.Hash ^= ZobristSide
 	}
 
 	return pos
@@ -130,7 +130,7 @@ func parseFEN(fen string) Position {
 // Section 7: Move Generation
 // ============================================================
 
-func (p *Position) generateMoves() []Move {
+func (p *Position) GenerateMoves() []Move {
 	moves := make([]Move, 0, 64)
 	us := p.SideToMove
 	them := us ^ 1
@@ -141,86 +141,86 @@ func (p *Position) generateMoves() []Move {
 	// Pawn moves
 	pawns := p.Pieces[us][Pawn]
 	for pawns != 0 {
-		from := popLSB(&pawns)
+		from := PopLSB(&pawns)
 		fromBit := uint64(1) << uint(from)
-		rank := sqRank(from)
-		file := sqFile(from)
+		rank := SqRank(from)
+		file := SqFile(from)
 
 		if us == White {
 			// Single push
 			toSq := from + 8
 			if toSq < 64 && allPieces&(1<<uint(toSq)) == 0 {
 				if rank == 6 { // promotion rank
-					moves = append(moves, newMove(from, toSq, FlagQueenPromo))
-					moves = append(moves, newMove(from, toSq, FlagRookPromo))
-					moves = append(moves, newMove(from, toSq, FlagBishopPromo))
-					moves = append(moves, newMove(from, toSq, FlagKnightPromo))
+					moves = append(moves, NewMove(from, toSq, FlagQueenPromo))
+					moves = append(moves, NewMove(from, toSq, FlagRookPromo))
+					moves = append(moves, NewMove(from, toSq, FlagBishopPromo))
+					moves = append(moves, NewMove(from, toSq, FlagKnightPromo))
 				} else {
-					moves = append(moves, newMove(from, toSq, FlagQuiet))
+					moves = append(moves, NewMove(from, toSq, FlagQuiet))
 					// Double push
 					if rank == 1 {
 						toSq2 := from + 16
 						if allPieces&(1<<uint(toSq2)) == 0 {
-							moves = append(moves, newMove(from, toSq2, FlagDoublePawn))
+							moves = append(moves, NewMove(from, toSq2, FlagDoublePawn))
 						}
 					}
 				}
 			}
 			// Captures
-			attacks := pawnAttacks[White][from]
+			attacks := PawnAttacks[White][from]
 			captures := attacks & theirPieces
 			for captures != 0 {
-				to := popLSB(&captures)
+				to := PopLSB(&captures)
 				if rank == 6 {
-					moves = append(moves, newMove(from, to, FlagQueenPromoCapture))
-					moves = append(moves, newMove(from, to, FlagRookPromoCapture))
-					moves = append(moves, newMove(from, to, FlagBishopPromoCapture))
-					moves = append(moves, newMove(from, to, FlagKnightPromoCapture))
+					moves = append(moves, NewMove(from, to, FlagQueenPromoCapture))
+					moves = append(moves, NewMove(from, to, FlagRookPromoCapture))
+					moves = append(moves, NewMove(from, to, FlagBishopPromoCapture))
+					moves = append(moves, NewMove(from, to, FlagKnightPromoCapture))
 				} else {
-					moves = append(moves, newMove(from, to, FlagCapture))
+					moves = append(moves, NewMove(from, to, FlagCapture))
 				}
 			}
 			// En passant
 			if p.EnPassant != NoSquare && attacks&(1<<uint(p.EnPassant)) != 0 {
-				moves = append(moves, newMove(from, p.EnPassant, FlagEPCapture))
+				moves = append(moves, NewMove(from, p.EnPassant, FlagEPCapture))
 			}
 		} else { // Black
 			// Single push
 			toSq := from - 8
 			if toSq >= 0 && allPieces&(1<<uint(toSq)) == 0 {
 				if rank == 1 { // promotion rank
-					moves = append(moves, newMove(from, toSq, FlagQueenPromo))
-					moves = append(moves, newMove(from, toSq, FlagRookPromo))
-					moves = append(moves, newMove(from, toSq, FlagBishopPromo))
-					moves = append(moves, newMove(from, toSq, FlagKnightPromo))
+					moves = append(moves, NewMove(from, toSq, FlagQueenPromo))
+					moves = append(moves, NewMove(from, toSq, FlagRookPromo))
+					moves = append(moves, NewMove(from, toSq, FlagBishopPromo))
+					moves = append(moves, NewMove(from, toSq, FlagKnightPromo))
 				} else {
-					moves = append(moves, newMove(from, toSq, FlagQuiet))
+					moves = append(moves, NewMove(from, toSq, FlagQuiet))
 					// Double push
 					if rank == 6 {
 						toSq2 := from - 16
 						if allPieces&(1<<uint(toSq2)) == 0 {
-							moves = append(moves, newMove(from, toSq2, FlagDoublePawn))
+							moves = append(moves, NewMove(from, toSq2, FlagDoublePawn))
 						}
 					}
 				}
 			}
 			// Captures
-			attacks := pawnAttacks[Black][from]
+			attacks := PawnAttacks[Black][from]
 			captures := attacks & theirPieces
 			for captures != 0 {
-				to := popLSB(&captures)
+				to := PopLSB(&captures)
 				if rank == 1 {
-					moves = append(moves, newMove(from, to, FlagQueenPromoCapture))
-					moves = append(moves, newMove(from, to, FlagRookPromoCapture))
-					moves = append(moves, newMove(from, to, FlagBishopPromoCapture))
-					moves = append(moves, newMove(from, to, FlagKnightPromoCapture))
+					moves = append(moves, NewMove(from, to, FlagQueenPromoCapture))
+					moves = append(moves, NewMove(from, to, FlagRookPromoCapture))
+					moves = append(moves, NewMove(from, to, FlagBishopPromoCapture))
+					moves = append(moves, NewMove(from, to, FlagKnightPromoCapture))
 				} else {
-					moves = append(moves, newMove(from, to, FlagCapture))
+					moves = append(moves, NewMove(from, to, FlagCapture))
 				}
 			}
 			// En passant
 			if p.EnPassant != NoSquare && attacks&(1<<uint(p.EnPassant)) != 0 {
-				moves = append(moves, newMove(from, p.EnPassant, FlagEPCapture))
+				moves = append(moves, NewMove(from, p.EnPassant, FlagEPCapture))
 			}
 		}
 		_ = fromBit
@@ -230,14 +230,14 @@ func (p *Position) generateMoves() []Move {
 	// Knight moves
 	knights := p.Pieces[us][Knight]
 	for knights != 0 {
-		from := popLSB(&knights)
-		attacks := knightAttacks[from] & ^ourPieces
+		from := PopLSB(&knights)
+		attacks := KnightAttacks[from] & ^ourPieces
 		for attacks != 0 {
-			to := popLSB(&attacks)
+			to := PopLSB(&attacks)
 			if theirPieces&(1<<uint(to)) != 0 {
-				moves = append(moves, newMove(from, to, FlagCapture))
+				moves = append(moves, NewMove(from, to, FlagCapture))
 			} else {
-				moves = append(moves, newMove(from, to, FlagQuiet))
+				moves = append(moves, NewMove(from, to, FlagQuiet))
 			}
 		}
 	}
@@ -245,14 +245,14 @@ func (p *Position) generateMoves() []Move {
 	// Bishop moves
 	bishops := p.Pieces[us][Bishop]
 	for bishops != 0 {
-		from := popLSB(&bishops)
-		attacks := bishopAttacks(from, allPieces) & ^ourPieces
+		from := PopLSB(&bishops)
+		attacks := BishopAttacks(from, allPieces) & ^ourPieces
 		for attacks != 0 {
-			to := popLSB(&attacks)
+			to := PopLSB(&attacks)
 			if theirPieces&(1<<uint(to)) != 0 {
-				moves = append(moves, newMove(from, to, FlagCapture))
+				moves = append(moves, NewMove(from, to, FlagCapture))
 			} else {
-				moves = append(moves, newMove(from, to, FlagQuiet))
+				moves = append(moves, NewMove(from, to, FlagQuiet))
 			}
 		}
 	}
@@ -260,14 +260,14 @@ func (p *Position) generateMoves() []Move {
 	// Rook moves
 	rooks := p.Pieces[us][Rook]
 	for rooks != 0 {
-		from := popLSB(&rooks)
-		attacks := rookAttacks(from, allPieces) & ^ourPieces
+		from := PopLSB(&rooks)
+		attacks := RookAttacks(from, allPieces) & ^ourPieces
 		for attacks != 0 {
-			to := popLSB(&attacks)
+			to := PopLSB(&attacks)
 			if theirPieces&(1<<uint(to)) != 0 {
-				moves = append(moves, newMove(from, to, FlagCapture))
+				moves = append(moves, NewMove(from, to, FlagCapture))
 			} else {
-				moves = append(moves, newMove(from, to, FlagQuiet))
+				moves = append(moves, NewMove(from, to, FlagQuiet))
 			}
 		}
 	}
@@ -275,14 +275,14 @@ func (p *Position) generateMoves() []Move {
 	// Queen moves
 	queens := p.Pieces[us][Queen]
 	for queens != 0 {
-		from := popLSB(&queens)
-		attacks := queenAttacks(from, allPieces) & ^ourPieces
+		from := PopLSB(&queens)
+		attacks := QueenAttacks(from, allPieces) & ^ourPieces
 		for attacks != 0 {
-			to := popLSB(&attacks)
+			to := PopLSB(&attacks)
 			if theirPieces&(1<<uint(to)) != 0 {
-				moves = append(moves, newMove(from, to, FlagCapture))
+				moves = append(moves, NewMove(from, to, FlagCapture))
 			} else {
-				moves = append(moves, newMove(from, to, FlagQuiet))
+				moves = append(moves, NewMove(from, to, FlagQuiet))
 			}
 		}
 	}
@@ -290,14 +290,14 @@ func (p *Position) generateMoves() []Move {
 	// King moves
 	kingBB := p.Pieces[us][King]
 	if kingBB != 0 {
-		from := lsb(kingBB)
-		attacks := kingAttacks[from] & ^ourPieces
+		from := Lsb(kingBB)
+		attacks := KingAttacks[from] & ^ourPieces
 		for attacks != 0 {
-			to := popLSB(&attacks)
+			to := PopLSB(&attacks)
 			if theirPieces&(1<<uint(to)) != 0 {
-				moves = append(moves, newMove(from, to, FlagCapture))
+				moves = append(moves, NewMove(from, to, FlagCapture))
 			} else {
-				moves = append(moves, newMove(from, to, FlagQuiet))
+				moves = append(moves, NewMove(from, to, FlagQuiet))
 			}
 		}
 
@@ -307,38 +307,38 @@ func (p *Position) generateMoves() []Move {
 				// King on e1, rook on h1, f1 and g1 must be empty, e1/f1/g1 not attacked
 				if from == E1 &&
 					allPieces&(1<<F1|1<<G1) == 0 &&
-					!p.isSquareAttacked(E1, them) &&
-					!p.isSquareAttacked(F1, them) &&
-					!p.isSquareAttacked(G1, them) {
-					moves = append(moves, newMove(E1, G1, FlagKingCastle))
+					!p.IsSquareAttacked(E1, them) &&
+					!p.IsSquareAttacked(F1, them) &&
+					!p.IsSquareAttacked(G1, them) {
+					moves = append(moves, NewMove(E1, G1, FlagKingCastle))
 				}
 			}
 			if p.CastlingRights&WhiteQueenSide != 0 {
 				if from == E1 &&
 					allPieces&(1<<D1|1<<C1|1<<B1) == 0 &&
-					!p.isSquareAttacked(E1, them) &&
-					!p.isSquareAttacked(D1, them) &&
-					!p.isSquareAttacked(C1, them) {
-					moves = append(moves, newMove(E1, C1, FlagQueenCastle))
+					!p.IsSquareAttacked(E1, them) &&
+					!p.IsSquareAttacked(D1, them) &&
+					!p.IsSquareAttacked(C1, them) {
+					moves = append(moves, NewMove(E1, C1, FlagQueenCastle))
 				}
 			}
 		} else {
 			if p.CastlingRights&BlackKingSide != 0 {
 				if from == E8 &&
 					allPieces&(1<<F8|1<<G8) == 0 &&
-					!p.isSquareAttacked(E8, them) &&
-					!p.isSquareAttacked(F8, them) &&
-					!p.isSquareAttacked(G8, them) {
-					moves = append(moves, newMove(E8, G8, FlagKingCastle))
+					!p.IsSquareAttacked(E8, them) &&
+					!p.IsSquareAttacked(F8, them) &&
+					!p.IsSquareAttacked(G8, them) {
+					moves = append(moves, NewMove(E8, G8, FlagKingCastle))
 				}
 			}
 			if p.CastlingRights&BlackQueenSide != 0 {
 				if from == E8 &&
 					allPieces&(1<<D8|1<<C8|1<<B8) == 0 &&
-					!p.isSquareAttacked(E8, them) &&
-					!p.isSquareAttacked(D8, them) &&
-					!p.isSquareAttacked(C8, them) {
-					moves = append(moves, newMove(E8, C8, FlagQueenCastle))
+					!p.IsSquareAttacked(E8, them) &&
+					!p.IsSquareAttacked(D8, them) &&
+					!p.IsSquareAttacked(C8, them) {
+					moves = append(moves, NewMove(E8, C8, FlagQueenCastle))
 				}
 			}
 		}
@@ -347,13 +347,13 @@ func (p *Position) generateMoves() []Move {
 	return moves
 }
 
-// generateLegalMoves returns only legal moves
-func (p *Position) generateLegalMoves() []Move {
-	pseudoLegal := p.generateMoves()
+// GenerateLegalMoves returns only legal moves
+func (p *Position) GenerateLegalMoves() []Move {
+	pseudoLegal := p.GenerateMoves()
 	legal := make([]Move, 0, len(pseudoLegal))
 	for _, m := range pseudoLegal {
-		newPos := p.makeMove(m)
-		if !newPos.inCheck(p.SideToMove) {
+		newPos := p.MakeMove(m)
+		if !newPos.InCheck(p.SideToMove) {
 			legal = append(legal, m)
 		}
 	}
@@ -364,7 +364,7 @@ func (p *Position) generateLegalMoves() []Move {
 // Section 8: Make Move
 // ============================================================
 
-func (p *Position) makeMove(m Move) Position {
+func (p *Position) MakeMove(m Move) Position {
 	newPos := *p // copy
 
 	us := p.SideToMove
@@ -385,15 +385,15 @@ func (p *Position) makeMove(m Move) Position {
 	}
 
 	// Hash: move the piece from -> to
-	newPos.Hash ^= zobristPiece[us][movingPiece][from]
-	newPos.Hash ^= zobristPiece[us][movingPiece][to]
+	newPos.Hash ^= ZobristPiece[us][movingPiece][from]
+	newPos.Hash ^= ZobristPiece[us][movingPiece][to]
 
 	// Remove captured piece (if any, non-EP)
 	if flags&FlagCapture != 0 && flags != FlagEPCapture {
 		for pc := 0; pc < 6; pc++ {
 			if newPos.Pieces[them][pc]&toBit != 0 {
 				newPos.Pieces[them][pc] ^= toBit
-				newPos.Hash ^= zobristPiece[them][pc][to]
+				newPos.Hash ^= ZobristPiece[them][pc][to]
 				break
 			}
 		}
@@ -409,8 +409,8 @@ func (p *Position) makeMove(m Move) Position {
 		newPos.Pieces[us][Pawn] ^= toBit
 		newPos.Pieces[us][promoPiece] |= toBit
 		// Hash: undo pawn placement at to, add promoted piece
-		newPos.Hash ^= zobristPiece[us][Pawn][to]
-		newPos.Hash ^= zobristPiece[us][promoPiece][to]
+		newPos.Hash ^= ZobristPiece[us][Pawn][to]
+		newPos.Hash ^= ZobristPiece[us][promoPiece][to]
 	}
 
 	// Handle en passant capture
@@ -422,36 +422,36 @@ func (p *Position) makeMove(m Move) Position {
 			capturedSq = to + 8
 		}
 		newPos.Pieces[them][Pawn] ^= 1 << uint(capturedSq)
-		newPos.Hash ^= zobristPiece[them][Pawn][capturedSq]
+		newPos.Hash ^= ZobristPiece[them][Pawn][capturedSq]
 	}
 
 	// Handle castling - move the rook
 	if flags == FlagKingCastle {
 		if us == White {
 			newPos.Pieces[White][Rook] ^= (1 << H1) | (1 << F1)
-			newPos.Hash ^= zobristPiece[White][Rook][H1]
-			newPos.Hash ^= zobristPiece[White][Rook][F1]
+			newPos.Hash ^= ZobristPiece[White][Rook][H1]
+			newPos.Hash ^= ZobristPiece[White][Rook][F1]
 		} else {
 			newPos.Pieces[Black][Rook] ^= (1 << H8) | (1 << F8)
-			newPos.Hash ^= zobristPiece[Black][Rook][H8]
-			newPos.Hash ^= zobristPiece[Black][Rook][F8]
+			newPos.Hash ^= ZobristPiece[Black][Rook][H8]
+			newPos.Hash ^= ZobristPiece[Black][Rook][F8]
 		}
 	}
 	if flags == FlagQueenCastle {
 		if us == White {
 			newPos.Pieces[White][Rook] ^= (1 << A1) | (1 << D1)
-			newPos.Hash ^= zobristPiece[White][Rook][A1]
-			newPos.Hash ^= zobristPiece[White][Rook][D1]
+			newPos.Hash ^= ZobristPiece[White][Rook][A1]
+			newPos.Hash ^= ZobristPiece[White][Rook][D1]
 		} else {
 			newPos.Pieces[Black][Rook] ^= (1 << A8) | (1 << D8)
-			newPos.Hash ^= zobristPiece[Black][Rook][A8]
-			newPos.Hash ^= zobristPiece[Black][Rook][D8]
+			newPos.Hash ^= ZobristPiece[Black][Rook][A8]
+			newPos.Hash ^= ZobristPiece[Black][Rook][D8]
 		}
 	}
 
 	// Hash: XOR out old EP file if set
 	if p.EnPassant != NoSquare {
-		newPos.Hash ^= zobristEP[sqFile(p.EnPassant)]
+		newPos.Hash ^= ZobristEP[SqFile(p.EnPassant)]
 	}
 
 	// Update en passant square
@@ -462,13 +462,13 @@ func (p *Position) makeMove(m Move) Position {
 			newPos.EnPassant = from - 8
 		}
 		// Hash: XOR in new EP file
-		newPos.Hash ^= zobristEP[sqFile(newPos.EnPassant)]
+		newPos.Hash ^= ZobristEP[SqFile(newPos.EnPassant)]
 	} else {
 		newPos.EnPassant = NoSquare
 	}
 
 	// Hash: XOR out old castling rights
-	newPos.Hash ^= zobristCastling[p.CastlingRights]
+	newPos.Hash ^= ZobristCastling[p.CastlingRights]
 
 	// Update castling rights
 	// If king moves, lose both castling rights for that side
@@ -505,7 +505,7 @@ func (p *Position) makeMove(m Move) Position {
 	}
 
 	// Hash: XOR in new castling rights
-	newPos.Hash ^= zobristCastling[newPos.CastlingRights]
+	newPos.Hash ^= ZobristCastling[newPos.CastlingRights]
 
 	// Update half move clock
 	if movingPiece == Pawn || m.IsCapture() {
@@ -521,8 +521,8 @@ func (p *Position) makeMove(m Move) Position {
 
 	// Switch side
 	newPos.SideToMove = them
-	newPos.Hash ^= zobristSide
+	newPos.Hash ^= ZobristSide
 
-	newPos.updateOccupied()
+	newPos.UpdateOccupied()
 	return newPos
 }
