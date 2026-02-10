@@ -1,6 +1,6 @@
 # VietCoffee
 
-A chess engine written in Go. Single file, zero dependencies, stdlib only.
+A chess engine written in Go, tuned to play aggressively. Single file, zero dependencies, stdlib only.
 
 VietCoffee speaks the UCI protocol for use with chess GUIs, and includes a built-in Lichess Bot API client for playing live games on lichess.org.
 
