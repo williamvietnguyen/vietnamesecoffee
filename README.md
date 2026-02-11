@@ -102,13 +102,13 @@ VietCoffee is tuned for **aggressive, attacking play** and uses **tapered evalua
 |  | Middlegame | Endgame | Notes |
 |---|---|---|---|
 | Pawn (opponent's) | 100 cp | 120 cp | Pawns worth more in endgame (they promote!) |
-| Pawn (own) | 90 cp | 120 cp | Own pawns cheap to sacrifice in mg for open lines |
+| Pawn (own) | 80 cp | 120 cp | Own pawns dirt cheap to sacrifice in mg for open lines |
 | Knight | 340 cp | 340 cp | Boosted +20 over typical 320 |
 | Bishop | 350 cp | 350 cp | Boosted +20 over typical 330 |
 | Rook | 490 cp | 530 cp | Slightly devalued in mg; rooks dominate open endgame boards |
 | Queen | 900 cp | 1000 cp | Queens worth more in endgame |
 
-Knights and bishops are overvalued to encourage piece activity and tactical sacrifices. Rooks are slightly undervalued in the middlegame to de-emphasize slow endgame grinding. Own pawns are deliberately undervalued in the middlegame (90 cp vs 100 cp for opponent's) so the engine will happily sacrifice pawns to open files, create passed pawns, or accelerate attacks. The asymmetric pawn value is a middlegame-only concept — in the endgame, pawns are valued equally for both sides.
+Knights and bishops are overvalued to encourage piece activity and tactical sacrifices. Rooks are slightly undervalued in the middlegame to de-emphasize slow endgame grinding. Own pawns are deliberately undervalued in the middlegame (80 cp vs 100 cp for opponent's) so the engine will happily sacrifice pawns to open files, create passed pawns, or accelerate attacks. The asymmetric pawn value is a middlegame-only concept — in the endgame, pawns are valued equally for both sides.
 
 **Piece-square tables (separate mg and eg):**
 
@@ -127,38 +127,38 @@ Knights and bishops are overvalued to encourage piece activity and tactical sacr
 
 **Positional evaluation:**
 - Bishop pair: +50 mg / +70 eg (bishop pair is stronger in endgames with open diagonals)
-- Rook on open file: +20 mg / +25 eg (+25 mg extra if file is near enemy king!)
-- Rook on semi-open file: +10 mg / +12 eg (+15 mg extra if file is near enemy king!)
-- Connected rooks: +20 cp when two rooks see each other on a rank or file (+25 mg extra if doubled on a file near enemy king!)
+- Rook on open file: +20 mg / +25 eg (+35 mg extra if file is near enemy king!)
+- Rook on semi-open file: +10 mg / +12 eg (+25 mg extra if file is near enemy king!)
+- Connected rooks: +20 cp when two rooks see each other on a rank or file (+35 mg extra if doubled on a file near enemy king!)
 - Passed pawns: +20 to +125 mg / +30 to +184 eg based on advancement (passed pawns are ~1.5x more valuable in endgames — they're about to promote!)
 - Doubled pawns: -5 mg / -8 eg per extra pawn (reduced penalty in mg — structure matters less than activity; harsher in eg)
 - Isolated pawns: -8 mg / -12 eg (reduced mg penalty; harsher in eg where structure matters)
-- Bishop x-ray to enemy king: +25 mg (bishop diagonal aimed at king zone) — middlegame-only
-- Queen diagonal x-ray to enemy king: +30 mg — middlegame-only
-- Queen rank/file x-ray to enemy king: +20 mg — middlegame-only
+- Bishop x-ray to enemy king: +40 mg (bishop diagonal aimed at king zone) — middlegame-only
+- Queen diagonal x-ray to enemy king: +45 mg — middlegame-only
+- Queen rank/file x-ray to enemy king: +30 mg — middlegame-only
 
 **King attack evaluation (middlegame-only, non-linear scaling — enables piece sacrifices):**
 
 All king attack terms contribute to the middlegame score only. In the endgame there aren't enough pieces to mount a king attack, so these bonuses naturally fade out through the tapered interpolation.
 
-- **Wide king danger zone** — uses a 2-ring zone around the enemy king (not just adjacent squares). Inner ring pieces count as full attackers. Outer ring pieces get proximity bonuses (knights +5, bishops/rooks +8, queens +12) — they're one move from attacking.
-- **King tropism** — all pieces (knights, bishops, rooks, queens) get a bonus for being physically close to the enemy king (Manhattan distance). Knights and queens get 3cp per step closer, bishops and rooks get 2cp. Gravitates every piece toward the enemy king like a swarm.
-- **Non-linear attacker scaling (doubled!)** — the more pieces aimed at the king, the disproportionately larger the reward. Weights are doubled from typical engines — the engine will sacrifice anything for a king attack:
-  - 1 attacker: +10 cp (probing)
-  - 2 attackers: +80 cp (real pressure, worth a pawn)
-  - 3 attackers: +240 cp (worth sacrificing a piece!)
-  - 4 attackers: +540 cp (worth sacrificing a rook and more!)
-  - 5+ attackers: +900 cp or more (worth sacrificing a queen!)
-- Penalty for weak enemy king pawn shield (missing defenders)
-- **Uncastled king bonus** — +30 mg if the opponent still has castling rights (king likely in center). Encourages the engine to attack before the opponent reaches safety. Middlegame-only.
-- **King safety imbalance** — when one side's king attack is stronger than the other's, the advantage grows superlinearly (quadratic scaling, divisor 200). A 100 cp attack edge yields +50 cp extra; a 200 cp edge yields +200 cp extra (worth a piece sacrifice); a 300 cp edge yields +450 cp extra. Encourages pressing king safety advantages aggressively. Middlegame-only.
+- **Wide king danger zone** — uses a 2-ring zone around the enemy king (not just adjacent squares). Inner ring pieces count as full attackers. Outer ring pieces get proximity bonuses (knights +10, bishops/rooks +15, queens +20) — they're one move from attacking.
+- **King tropism** — all pieces (knights, bishops, rooks, queens) get a bonus for being physically close to the enemy king (Manhattan distance). Knights and queens get 5cp per step closer, bishops and rooks get 4cp. Gravitates every piece toward the enemy king like a swarm.
+- **Non-linear attacker scaling (tripled!)** — the more pieces aimed at the king, the disproportionately larger the reward. Weights are tripled from typical engines — the engine will sacrifice anything for a king attack:
+  - 1 attacker: +15 cp (probing)
+  - 2 attackers: +120 cp (real pressure, worth a pawn)
+  - 3 attackers: +360 cp (worth sacrificing a piece!)
+  - 4 attackers: +750 cp (worth sacrificing a rook and more!)
+  - 5+ attackers: +1200 cp or more (worth sacrificing a queen!)
+- Penalty for weak enemy king pawn shield (+15 cp per missing shield pawn)
+- **Uncastled king bonus** — +50 mg if the opponent still has castling rights (king likely in center). Encourages the engine to attack before the opponent reaches safety. Middlegame-only.
+- **King safety imbalance** — when one side's king attack is stronger than the other's, the advantage grows superlinearly (quadratic scaling, divisor 120). A 100 cp attack edge yields +83 cp extra; a 200 cp edge yields +333 cp extra (worth a piece sacrifice); a 300 cp edge yields +750 cp extra. Encourages pressing king safety advantages aggressively. Middlegame-only.
 - **Initiative/tempo bonus** — +15 cp flat bonus for having the move. The engine always prefers maintaining the initiative over passive defense.
 
 **Pawn storm evaluation (middlegame-only):**
 - Large bonuses for advancing pawns on files near enemy king
 - Encourages direct pawn attacks on the enemy king position
-- Scales with pawn advancement (up to +80 cp for a 7th rank pawn storm!)
-- **Opposite-side castling boost** — when kings are castled on opposite sides (one king on files a-c, the other on files f-h), pawn storm bonuses are multiplied by 3/2 (50% boost). Opposite-side castling positions are inherently sharp — both sides race to attack, and pawn storms are the primary weapon.
+- Scales with pawn advancement (up to +90 cp for a 7th rank pawn storm!)
+- **Opposite-side castling boost** — when kings are castled on opposite sides (one king on files a-c, the other on files f-h), pawn storm bonuses are doubled (2x). Opposite-side castling positions are inherently sharp — both sides race to attack, and pawn storms are the primary weapon.
 
 All evaluation is relative to the side to move.
 

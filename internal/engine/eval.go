@@ -31,10 +31,10 @@ var PieceValueMG = [6]int{100, 340, 350, 490, 900, 0}
 var PieceValueEG = [6]int{120, 340, 350, 530, 1000, 0}
 
 // Own-pawn discount: middlegame aggression concept only.
-// Own pawns valued at 90cp (cheap to sacrifice for open lines), opponent pawns
-// at 100cp (still respect their value when capturing).
+// Own pawns valued at 80cp (dirt cheap to sacrifice for open lines), opponent
+// pawns at 100cp (still respect their value when capturing).
 // Endgame uses symmetric values since pawns matter equally for both sides.
-const ownPawnValueMG = 90
+const ownPawnValueMG = 80
 
 // ------------------------------------------------------------------
 // Piece-square tables — Middlegame
@@ -292,9 +292,9 @@ func Evaluate(pos *Position) int {
 	// material to press a king safety advantage. (Middlegame-only.)
 	imbalance := whiteKingAttack - blackKingAttack
 	if imbalance > 0 {
-		mg += imbalance * imbalance / 200
+		mg += imbalance * imbalance / 120
 	} else if imbalance < 0 {
-		mg -= imbalance * imbalance / 200
+		mg -= imbalance * imbalance / 120
 	}
 
 	// Pawn storm evaluation (middlegame-only)
@@ -305,10 +305,10 @@ func Evaluate(pos *Position) int {
 	// castling rights, their king is likely in the center — attack before
 	// they castle!
 	if pos.CastlingRights&(BlackKingSide|BlackQueenSide) != 0 {
-		mg += 30 // Black hasn't castled, bonus for White
+		mg += 50 // Black hasn't castled, bonus for White
 	}
 	if pos.CastlingRights&(WhiteKingSide|WhiteQueenSide) != 0 {
-		mg -= 30 // White hasn't castled, bonus for Black
+		mg -= 50 // White hasn't castled, bonus for Black
 	}
 
 	// Interpolate between middlegame and endgame scores
@@ -357,13 +357,13 @@ func evaluateKingAttack(pos *Position, us, them int) int {
 	for knights != 0 {
 		sq := PopLSB(&knights)
 		distance := Abs(SqRank(sq)-SqRank(enemyKing)) + Abs(SqFile(sq)-SqFile(enemyKing))
-		bonus += (8 - distance) * 3 // tropism: knights gravitate toward enemy king
+		bonus += (8 - distance) * 5 // tropism: knights gravitate toward enemy king
 		att := KnightAttacks[sq]
 		if att&innerZone != 0 {
 			attackers++
 		} else if att&outerZone != 0 {
 			attackers++ // outer ring still counts (piece is closing in)
-			bonus += 5  // small extra bonus for being in striking distance
+			bonus += 10 // bonus for being in striking distance
 		}
 	}
 
@@ -372,12 +372,12 @@ func evaluateKingAttack(pos *Position, us, them int) int {
 	for bishops != 0 {
 		sq := PopLSB(&bishops)
 		distance := Abs(SqRank(sq)-SqRank(enemyKing)) + Abs(SqFile(sq)-SqFile(enemyKing))
-		bonus += (8 - distance) * 2 // tropism: bishops closer to enemy king
+		bonus += (8 - distance) * 4 // tropism: bishops closer to enemy king
 		att := BishopAttacks(sq, pos.AllOccupied)
 		if att&innerZone != 0 {
 			attackers++
 		} else if att&outerZone != 0 {
-			bonus += 8 // bishop aimed near king, one move from attacking
+			bonus += 15 // bishop aimed near king, one move from attacking
 		}
 	}
 
@@ -386,12 +386,12 @@ func evaluateKingAttack(pos *Position, us, them int) int {
 	for rooks != 0 {
 		sq := PopLSB(&rooks)
 		distance := Abs(SqRank(sq)-SqRank(enemyKing)) + Abs(SqFile(sq)-SqFile(enemyKing))
-		bonus += (8 - distance) * 2 // tropism: rooks closer to enemy king
+		bonus += (8 - distance) * 4 // tropism: rooks closer to enemy king
 		att := RookAttacks(sq, pos.AllOccupied)
 		if att&innerZone != 0 {
 			attackers++
 		} else if att&outerZone != 0 {
-			bonus += 8 // rook aimed near king
+			bonus += 15 // rook aimed near king
 		}
 	}
 
@@ -400,12 +400,12 @@ func evaluateKingAttack(pos *Position, us, them int) int {
 	for queens != 0 {
 		sq := PopLSB(&queens)
 		distance := Abs(SqRank(sq)-SqRank(enemyKing)) + Abs(SqFile(sq)-SqFile(enemyKing))
-		bonus += (8 - distance) * 3 // tropism: queen gravitates toward enemy king
+		bonus += (8 - distance) * 5 // tropism: queen gravitates toward enemy king
 		att := QueenAttacks(sq, pos.AllOccupied)
 		if att&innerZone != 0 {
 			attackers++
 		} else if att&outerZone != 0 {
-			bonus += 12 // queen lurking near king
+			bonus += 20 // queen lurking near king
 		}
 	}
 
@@ -413,12 +413,12 @@ func evaluateKingAttack(pos *Position, us, them int) int {
 	// larger the bonus. This is what makes the engine sacrifice pieces — getting
 	// a 3rd or 4th attacker on the king is worth more than a whole piece.
 	//
-	//   1 attacker:   10 cp (minor annoyance)
-	//   2 attackers:  80 cp (real pressure)
-	//   3 attackers: 240 cp (worth a piece sacrifice!)
-	//   4 attackers: 540 cp (worth a rook sacrifice!)
+	//   1 attacker:   15 cp (probing)
+	//   2 attackers: 120 cp (real pressure, worth a pawn)
+	//   3 attackers: 360 cp (worth a piece sacrifice!)
+	//   4 attackers: 750 cp (worth a rook sacrifice!)
 	//   5+ attackers: devastating
-	kingAttackWeight := [8]int{0, 10, 80, 240, 540, 900, 1200, 1500}
+	kingAttackWeight := [8]int{0, 15, 120, 360, 750, 1200, 1600, 2000}
 	if attackers >= len(kingAttackWeight) {
 		attackers = len(kingAttackWeight) - 1
 	}
@@ -452,7 +452,7 @@ func evaluateKingAttack(pos *Position, us, them int) int {
 	}
 
 	if shieldPawns < 2 {
-		bonus += (3 - shieldPawns) * 10
+		bonus += (3 - shieldPawns) * 15
 	}
 
 	return bonus
@@ -491,14 +491,14 @@ func evaluateRooks(pos *Position, color int) (int, int) {
 			egBonus += 25 // open files slightly more valuable in endgame
 			// Extra bonus if open file is near enemy king (aggressive!)
 			if enemyKingFile >= 0 && Abs(file-enemyKingFile) <= 1 {
-				mgBonus += 25 // rook aimed at king's vicinity!
+				mgBonus += 35 // rook aimed at king's vicinity!
 			}
 		} else if ourPawns == 0 && theirPawns != 0 {
 			mgBonus += 10 // semi-open file
 			egBonus += 12
 			// Extra bonus if semi-open file is near enemy king
 			if enemyKingFile >= 0 && Abs(file-enemyKingFile) <= 1 {
-				mgBonus += 15
+				mgBonus += 25
 			}
 		}
 	}
@@ -515,7 +515,7 @@ func evaluateRooks(pos *Position, color int) (int, int) {
 			egBonus += 20
 			// Extra bonus if connected on a file near enemy king
 			if SqFile(r1) == SqFile(r2) && enemyKingFile >= 0 && Abs(SqFile(r1)-enemyKingFile) <= 1 {
-				mgBonus += 25 // doubled rooks aimed at king's file!
+				mgBonus += 35 // doubled rooks aimed at king's file!
 			}
 		}
 	}
@@ -541,7 +541,7 @@ func evaluateXrays(pos *Position, us, them int) int {
 		sq := PopLSB(&bishops)
 		att := BishopAttacks(sq, pos.AllOccupied)
 		if att&kingZone != 0 {
-			bonus += 25 // bishop aiming at king
+			bonus += 40 // bishop aiming at king
 		}
 	}
 
@@ -553,11 +553,11 @@ func evaluateXrays(pos *Position, us, them int) int {
 		sq := PopLSB(&queens)
 		diagAtt := BishopAttacks(sq, pos.AllOccupied)
 		if diagAtt&kingZone != 0 {
-			bonus += 30 // queen diagonal aimed at king
+			bonus += 45 // queen diagonal aimed at king
 		}
 		rankFileAtt := RookAttacks(sq, pos.AllOccupied)
 		if rankFileAtt&kingZone != 0 {
-			bonus += 20 // queen rank/file aimed at king
+			bonus += 30 // queen rank/file aimed at king
 		}
 	}
 
@@ -685,14 +685,14 @@ func evaluatePawnStorm(pos *Position, us, them int) int {
 			rank := SqRank(sq)
 			// Bonus for pawns advancing toward enemy king
 			if us == White && rank > 3 {
-				bonus += (rank - 3) * 20 // big bonus for pawn storms!
+				bonus += (rank - 3) * 30 // big bonus for pawn storms!
 			} else if us == Black && rank < 4 {
-				bonus += (4 - rank) * 20
+				bonus += (4 - rank) * 30
 			}
 		}
 	}
 	if oppositeSide {
-		bonus = bonus * 3 / 2
+		bonus = bonus * 2
 	}
 	return bonus
 }
